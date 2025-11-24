@@ -90,8 +90,8 @@ def main():
     
     
     # fixed feature extractor
-    clip_model = create_model(model_name=args.model_name, img_size=args.img_size, device=device, pretrained=args.pretrain, require_pretrained=True,
-    force_custom_text=True  )
+    clip_model = create_model(model_name=args.model_name, img_size=args.img_size, device=device, pretrained=args.pretrain, require_pretrained=True )
+    
     #print(clip_model)
     clip_model.eval()
 
