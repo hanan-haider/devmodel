@@ -52,7 +52,7 @@ def get_cast_dtype(precision: str):
 
     
 class CustomTextCLIP(nn.Module):
-    output_dict: torch.jit.Final[bool]
+    output_dict: tFinal[bool]
 
     def __init__(
             self,
@@ -67,6 +67,7 @@ class CustomTextCLIP(nn.Module):
         self.output_dict = output_dict
         self.visual = _build_vision_tower(embed_dim, vision_cfg, quick_gelu, cast_dtype)
         self.text = _build_text_tower(embed_dim, text_cfg, quick_gelu, cast_dtype)
+
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
     def lock_image_tower(self, unlocked_groups=0, freeze_bn_stats=False):

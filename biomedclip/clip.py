@@ -75,7 +75,7 @@ def create_model(
         device: Union[str, torch.device] = 'cpu',
         jit: bool = False,
         force_quick_gelu: bool = False,
-        force_custom_text: bool = True,
+        force_custom_text: bool = False,
         force_patch_dropout: Optional[float] = None,
         force_image_size: Optional[Union[int, Tuple[int, int]]] = None,
         output_dict: Optional[bool] = None,
