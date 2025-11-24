@@ -72,7 +72,7 @@ def get_cast_dtype(precision: str):
 
     
 class CustomTextCLIP(nn.Module):
-    output_dict: tFinal[bool]
+    output_dict: Final[bool]
 
     def __init__(
             self,
