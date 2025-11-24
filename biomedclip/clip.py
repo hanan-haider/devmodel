@@ -74,7 +74,7 @@ def create_model(
         device: Union[str, torch.device] = 'cpu',
         jit: bool = False,
         force_quick_gelu: bool = False,
-        force_custom_text: bool = False,
+        force_custom_text: bool = True,
         force_patch_dropout: Optional[float] = None,
         force_image_size: Optional[Union[int, Tuple[int, int]]] = None,
         output_dict: Optional[bool] = None,
@@ -89,7 +89,7 @@ def create_model(
     if isinstance(device, str):
         device = torch.device(device)
 
-    if pretrained and pretrained.lower() == 'microsoft':
+    if pretrained and pretrained.lower() == 'openai':
         logging.info(f'Loading pretrained {model_name} from OpenAI.')
         model_cfg = model_cfg or get_model_config(model_name)
         # print(model_cfg['vision_cfg'])
