@@ -143,10 +143,11 @@ def create_model(
             if output_dict and hasattr(model, "output_dict"):
                 model.output_dict = True
     else:
-        # print('here')
+        print('here')
         model_cfg = model_cfg or get_model_config(model_name)
         if model_cfg is not None:
             print(f'Loaded {model_name} model config.')
+            print("Model config:", model_cfg)
         else:
             raise RuntimeError(f'Model config for {model_name} not found.')
 
