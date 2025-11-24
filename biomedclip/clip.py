@@ -59,26 +59,11 @@ def get_model_config(model_name):
         return None
 
 
-def load_state_dict(checkpoint_path: str, map_location='cpu'):
-    checkpoint = torch.load(checkpoint_path, map_location=map_location)
-    if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
-        state_dict = checkpoint['state_dict']
-    else:
-        state_dict = checkpoint
-    if next(iter(state_dict.items()))[0].startswith('module'):
-        state_dict = {k[7:]: v for k, v in state_dict.items()}
-    return state_dict
 
 
 
-def load_checkpoint(model, checkpoint_path, strict=True):
-    state_dict = load_state_dict(checkpoint_path)
-    # detect old format and make compatible with new format
-    if 'positional_embedding' in state_dict and not hasattr(model, 'positional_embedding'):
-        state_dict = convert_to_custom_text_state_dict(state_dict)
-    resize_pos_embed(state_dict, model)
-    incompatible_keys = model.load_state_dict(state_dict, strict=strict)
-    return incompatible_keys
+
+
 
 
 def create_model(
@@ -104,7 +89,7 @@ def create_model(
     if isinstance(device, str):
         device = torch.device(device)
 
-    if pretrained and pretrained.lower() == 'openai':
+    if pretrained and pretrained.lower() == 'microsoft':
         logging.info(f'Loading pretrained {model_name} from OpenAI.')
         model_cfg = model_cfg or get_model_config(model_name)
         # print(model_cfg['vision_cfg'])
