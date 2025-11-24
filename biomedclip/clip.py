@@ -166,7 +166,7 @@ def create_model(
 
         cast_dtype = get_cast_dtype(precision)
         custom_text = model_cfg.pop('custom_text', False) or force_custom_text
-        model_cfg=model_cfg.pop('preprocess_cfg', None)  # Remove if exists
+        #model_cfg=model_cfg.pop('preprocess_cfg', None)  # Remove if exists
 
         if custom_text:
             model = CustomTextCLIP(**model_cfg, cast_dtype=cast_dtype)
