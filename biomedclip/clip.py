@@ -97,7 +97,7 @@ def create_model(
         model_cfg = model_cfg or get_model_config(model_name)
         #print("here is the model config:", model_cfg )
         if "timm_model_name" in model_cfg["vision_cfg"]:
-    # timm models have fixed image sizes
+         # timm models have fixed image sizes
             model_cfg["vision_cfg"]["image_size"] = 224
 
             cast_dtype = get_cast_dtype(precision)
