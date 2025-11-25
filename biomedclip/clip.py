@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 import torch
 import numpy as np
 
-from .model import get_cast_dtype, CustomTextCLIP
+from .model import get_cast_dtype, CustomTextCLIP ,resize_pos_embed_biomedclip
 #from .model import CLIP, CustomTextCLIP #convert_weights_to_lp, convert_to_custom_text_state_dict, resize_pos_embed, get_cast_dtype
 #from .openai import load_openai_model
 from .microsoft import load_biomedclip_model
@@ -136,7 +136,8 @@ def create_model(
 
             #if not hasattr(model.visual, 'grid_size'):
             #    model.visual.grid_size = int(np.sqrt(model.visual.attnpool.positional_embedding.shape[0] - 1))
-            resize_pos_embed(state_dict, model)
+            #resize_pos_embed(state_dict, model)
+            resize_pos_embed_biomedclip(state_dict, model)
             incompatible_keys = model.load_state_dict(state_dict, strict=True)
             model.to(device=device)
             if precision in ("fp16", "bf16"):
