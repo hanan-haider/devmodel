@@ -24,7 +24,7 @@ class CLIPVisionCfg:
     mlp_ratio: float = 4.0
     patch_size: int = 16
     image_size: Union[Tuple[int, int], int] = 224
-    
+
     ls_init_value: Optional[float] = None  # layer scale initial value
     patch_dropout: float = 0.2  # what fraction of patches to dropout during training (0 would mean disabled and no patches dropped) - 0.5 to 0.75 recommended in the paper for optimal results
     input_patchnorm: bool = False # whether to use dual patchnorm - would only apply the input layernorm on each patch, as post-layernorm already exist in original clip vit design
@@ -260,137 +260,166 @@ class CustomTextCLIP(nn.Module):
 
 
 
-
 def build_model_from_biomedclip_state_dict(
     state_dict: dict,
+    quick_gelu=True,
     cast_dtype=torch.float16,
 ):
     """
-    Build BiomedCLIP model from official Microsoft checkpoint state_dict.
-    PRINT STATEMENTS ADDED ONLY — LOGIC NOT CHANGED.
+    Build BiomedCLIP model from state dict.
+    BiomedCLIP uses:
+    - Vision: timm ViT-B/16 (visual.trunk.*)
+    - Text: HuggingFace BERT (text.transformer.*)
     """
-
-    print("\n=== [INFO] Extracting Vision Tower Parameters ===")
-
-    # === Vision Tower (ViT-B/16) ===
+    
+    print("Building BiomedCLIP model from state dict...")
+    
+    # ========== VISION ENCODER DETECTION ==========
+    # BiomedCLIP uses timm's ViT structure (visual.trunk.*)
+    vit = any(k.startswith("visual.trunk") for k in state_dict.keys())
+    
+    if not vit:
+        raise ValueError("BiomedCLIP requires ViT backbone (visual.trunk.*)")
+    
+    print("✓ Detected ViT backbone (timm structure)")
+    
+    # Vision parameters from BiomedCLIP state dict
     vision_width = state_dict["visual.trunk.patch_embed.proj.weight"].shape[0]  # 768
-    print(f"vision_width: {vision_width}")
-
-    vision_layers = len([
-        k for k in state_dict.keys()
-        if k.startswith("visual.trunk.blocks.") and k.endswith(".attn.qkv.weight")
-    ])  # 12
-    print(f"vision_layers: {vision_layers}")
-
     vision_patch_size = state_dict["visual.trunk.patch_embed.proj.weight"].shape[-1]  # 16
-    print(f"vision_patch_size: {vision_patch_size}")
-
-    pos_embed_shape = state_dict["visual.trunk.pos_embed"].shape
-    print(f"pos_embed_shape: {pos_embed_shape}")
-
-    grid_size = int((pos_embed_shape[1] - 1) ** 0.5)  # 14
-    image_size = vision_patch_size * grid_size  # 224
-
-    print(f"grid_size: {grid_size}")
-    print(f"image_size: {image_size}")
-
-    print("\n=== [INFO] Extracting Text Tower Parameters ===")
-
-    # === Text Tower (PubMedBERT) ===
-    transformer_width = state_dict["text.transformer.embeddings.word_embeddings.weight"].shape[1]
-    print(f"transformer_width: {transformer_width}")
-
-    vocab_size = state_dict["text.transformer.embeddings.word_embeddings.weight"].shape[0]
-    print(f"vocab_size: {vocab_size}")
-
-    context_length = state_dict["text.transformer.embeddings.position_embeddings.weight"].shape[0]
-    print(f"context_length: {context_length}")
-
-    transformer_layers = len([
-        k for k in state_dict.keys()
-        if k.startswith("text.transformer.encoder.layer.") and k.endswith(".attention.self.query.weight")
-    ])
-    print(f"transformer_layers: {transformer_layers}")
-
-    transformer_heads = transformer_width // 64
-    print(f"transformer_heads: {transformer_heads}")
-
-    # Final embedding dimension
-    embed_dim = state_dict["visual.head.proj.weight"].shape[0]
-    print(f"embed_dim: {embed_dim}")
-
-    print("\n=== [INFO] Building Vision/Text Configs ===")
-
-    # === Configs ===
-    vision_cfg = CLIPVisionCfg(
+    
+    # Count transformer blocks
+    vision_layers = len([k for k in state_dict.keys() 
+                        if k.startswith("visual.trunk.blocks") and k.endswith(".attn.qkv.weight")])  # 12
+    
+    # Calculate image size from positional embedding
+    # pos_embed shape: (1, num_patches + 1, dim) = (1, 197, 768)
+    # num_patches = 196 = 14x14, so image_size = 14 * 16 = 224
+    grid_size = int(np.sqrt(state_dict["visual.trunk.pos_embed"].shape[1] - 1))
+    image_size = vision_patch_size * grid_size
+    
+    print(f"Vision config -> width: {vision_width}, layers: {vision_layers}, "
+          f"patch_size: {vision_patch_size}, image_size: {image_size}")
+    
+    # ========== TEXT ENCODER DETECTION ==========
+    # BiomedCLIP uses HuggingFace BERT structure (text.transformer.*)
+    bert = any(k.startswith("text.transformer") for k in state_dict.keys())
+    
+    if not bert:
+        raise ValueError("BiomedCLIP requires BERT text encoder (text.transformer.*)")
+    
+    print("✓ Detected BERT text encoder (HuggingFace structure)")
+    
+    # Text parameters from BiomedCLIP state dict
+    text_width = state_dict["text.transformer.embeddings.word_embeddings.weight"].shape[1]  # 768
+    vocab_size = state_dict["text.transformer.embeddings.word_embeddings.weight"].shape[0]  # 30522
+    context_length = state_dict["text.transformer.embeddings.position_embeddings.weight"].shape[0]  # 512
+    
+    # Count BERT layers
+    text_layers = len([k for k in state_dict.keys() 
+                      if k.startswith("text.transformer.encoder.layer") 
+                      and k.endswith(".attention.self.query.weight")])  # 12
+    
+    # BERT uses 64-dimensional heads
+    text_heads = text_width // 64  # 768 // 64 = 12
+    
+    print(f"Text config -> width: {text_width}, layers: {text_layers}, "
+          f"heads: {text_heads}, vocab_size: {vocab_size}, context_length: {context_length}")
+    
+    # ========== EMBEDDING DIMENSION ==========
+    # BiomedCLIP projects both vision and text to 512 dimensions
+    # Visual: 768 -> 512 (visual.head.proj.weight)
+    # Text: 768 -> 640 -> 512 (text.proj.0.weight, text.proj.2.weight)
+    embed_dim = state_dict["visual.head.proj.weight"].shape[0]  # 512
+    
+    print(f"Embed dim (joint space): {embed_dim}")
+    
+    # ========== CREATE MODEL CONFIGS ==========
+    vision_cfg = BiomedCLIPVisionCfg(
         layers=vision_layers,
         width=vision_width,
+        head_width=64,  # Standard for ViT
         patch_size=vision_patch_size,
         image_size=image_size,
-        timm_model_name="vit_base_patch16_224",
-        timm_model_pretrained=False,
-        timm_pool='',
-        timm_proj='linear',
+        mlp_ratio=4.0,  # 3072 / 768 = 4
+        output_tokens=True,  # BiomedCLIP outputs all tokens
     )
-    print(f"vision_cfg: {vision_cfg}")
-
-    text_cfg = CLIPTextCfg(
+    
+    text_cfg = BiomedCLIPTextCfg(
         context_length=context_length,
         vocab_size=vocab_size,
-        width=transformer_width,
-        heads=transformer_heads,
-        layers=transformer_layers,
+        width=text_width,
+        heads=text_heads,
+        layers=text_layers,
+        mlp_ratio=4.0,  # 3072 / 768 = 4
+        proj='mlp',  # BiomedCLIP uses 2-layer MLP projection
+        pooler_type='cls_last_hidden_state_pooler',  # Uses [CLS] token
         hf_model_name='microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract',
-        hf_tokenizer_name='microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract',
-        hf_proj_type='mlp',
-        hf_pooler_type='cls_last_hidden_state_pooler',
+        output_tokens=False,
     )
-    print(f"text_cfg: {text_cfg}")
-
-    print("\n=== [INFO] Creating CLIP Model ===")
-
-    # === Build Model ===
+    
+    print("\nConfigs created:")
+    print(f"  Vision: {vision_cfg}")
+    print(f"  Text: {text_cfg}")
+    
+    # ========== BUILD MODEL ==========
     model = CustomTextCLIP(
-        embed_dim=embed_dim,
+        embed_dim,
         vision_cfg=vision_cfg,
         text_cfg=text_cfg,
-        quick_gelu=False,
+        quick_gelu=quick_gelu,
         cast_dtype=cast_dtype,
     )
-    print(f"Model created successfully! (dtype={cast_dtype})")
-
-    print("\n=== [INFO] Cleaning State Dict Keys ===")
-
-    # === Load weights ===
-    for key in ["logit_scale", "text.transformer.embeddings.position_ids"]:
-        if key in state_dict:
-            print(f"Removing key: {key}")
-        state_dict.pop(key, None)
-
-    if "text.proj.weight" in state_dict:
-        print("Removing: text.proj.weight")
-        del state_dict["text.proj.weight"]
-
-    if "text.proj.bias" in state_dict:
-        print("Removing: text.proj.bias")
-        del state_dict["text.proj.bias"]
-
-    print("\n=== [INFO] Loading Weights Into Model ===")
-
-    missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
-
-    print(f"Missing keys: {missing_keys[:10]}")
-    print(f"Unexpected keys: {unexpected_keys[:10]}")
-
-    critical_missing = [k for k in missing_keys if not k.startswith("text.proj.")]
-    if critical_missing:
-        print(f"WARNING: Critical missing keys: {critical_missing[:10]}")
-
-    # FP16 conversion
+    
+    print("\n✓ Model instance created")
+    
+    # ========== ADAPT STATE DICT KEYS ==========
+    # BiomedCLIP has different key names than standard CLIP
+    new_state_dict = {}
+    
+    print("\nAdapting state dict keys...")
+    for key, value in state_dict.items():
+        new_key = key
+        
+        # Map visual.head.proj -> visual.proj (if needed by your model)
+        if key == "visual.head.proj.weight":
+            new_key = "visual.proj.weight"
+            print(f"  Mapped: {key} -> {new_key}")
+        
+        # Skip position_ids (it's a buffer, not a parameter)
+        elif key == "text.transformer.embeddings.position_ids":
+            print(f"  Skipping: {key} (buffer, not parameter)")
+            continue
+        
+        # Keep BiomedCLIP text projection as-is (2-layer MLP)
+        elif key.startswith("text.proj"):
+            print(f"  Keeping: {key} (BiomedCLIP MLP projection)")
+        
+        new_state_dict[new_key] = value
+    
+    # Remove unused keys if present
+    for key in ["input_resolution", "context_length", "vocab_size"]:
+        if key in new_state_dict:
+            new_state_dict.pop(key)
+            print(f"  Removed: {key}")
+    
+    # ========== CONVERT WEIGHTS ==========
+    # Note: BiomedCLIP might already be in fp32, so check before converting
     if cast_dtype == torch.float16:
-        print("\nConverting model to fp16...")
-        model = model.half()
-
-    print("\n=== [INFO] Model Build COMPLETE ===\n")
-
+        print("\nConverting weights to fp16...")
+        convert_weights_to_fp16(model)
+    
+    # ========== LOAD STATE DICT ==========
+    print("\nLoading state dict...")
+    
+    # Use strict=False to handle minor mismatches
+    incompatible_keys = model.load_state_dict(new_state_dict, strict=False)
+    
+    if incompatible_keys.missing_keys:
+        print(f"\n⚠️ Missing keys: {incompatible_keys.missing_keys}")
+    
+    if incompatible_keys.unexpected_keys:
+        print(f"\n⚠️ Unexpected keys: {incompatible_keys.unexpected_keys}")
+    
+    print("\n✓ BiomedCLIP model loaded successfully!")
+    
     return model.eval()

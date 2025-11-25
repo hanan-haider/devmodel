@@ -95,11 +95,11 @@ def create_model(
     if pretrained and pretrained.lower() == 'microsoft':
         logging.info(f'Loading pretrained {model_name} .')
         model_cfg = model_cfg or get_model_config(model_name)
-        print("here is the model config:", model_cfg )
+        #print("here is the model config:", model_cfg )
         if model_cfg['vision_cfg']['image_size'] != img_size:
             model_cfg['vision_cfg']['image_size'] = img_size
             cast_dtype = get_cast_dtype(precision)
-            print(" After model config:", model_cfg )
+            #print(" After model config:", model_cfg )
             
 
             #print("model path of ckpt", _MODEL_CKPT_PATHS[model_name])
@@ -152,7 +152,7 @@ def create_model(
         model_cfg = model_cfg or get_model_config(model_name)
         if model_cfg is not None:
             print(f'Loaded {model_name} model config.')
-            print("Model config:", model_cfg)
+            #print("Model config:", model_cfg)
         else:
             raise RuntimeError(f'Model config for {model_name} not found.')
 
