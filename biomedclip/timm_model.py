@@ -17,7 +17,7 @@ try:
 except ImportError:
     timm = None
 
-from biomedclip.utils import freeze_batch_norm_2d
+from utils import freeze_batch_norm_2d
 
 
 
