@@ -90,7 +90,7 @@ def create_model(
     if isinstance(device, str):
         device = torch.device(device)
 
-    if pretrained and pretrained.lower() == 'openai':
+    if pretrained and pretrained.lower() == 'microsoft':
         logging.info(f'Loading pretrained {model_name} from OpenAI.')
         model_cfg = model_cfg or get_model_config(model_name)
         # print(model_cfg['vision_cfg'])
@@ -98,7 +98,7 @@ def create_model(
             model_cfg['vision_cfg']['image_size'] = img_size
             cast_dtype = get_cast_dtype(precision)
 
-            model_pre = load_openai_model(
+            model_pre = load_biomedclip_model(
                 name = _MODEL_CKPT_PATHS[model_name],
                 precision=precision,
                 device=device,
@@ -131,7 +131,7 @@ def create_model(
             if jit:
                 model = torch.jit.script(model)
         else:
-            model = load_openai_model(
+            model = load_biomedclip_model(
                 model_name,
                 precision=precision,
                 device=device,
