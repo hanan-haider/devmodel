@@ -17,7 +17,7 @@ from typing import Final
 
 
 @dataclass
-class BiomedCLIPVisionCfg:
+class CLIPVisionCfg:
     layers: Union[Tuple[int, int, int, int], int] = 12
     width: int = 768
     head_width: int = 64
@@ -44,7 +44,7 @@ class BiomedCLIPVisionCfg:
 
 
 @dataclass
-class BiomedCLIPTextCfg:
+class CLIPTextCfg:
     context_length: int = 77
     vocab_size: int = 49408
     width: int = 512
@@ -339,7 +339,7 @@ def build_model_from_biomedclip_state_dict(
     print(f"Embed dim (joint space): {embed_dim}")
     
     # ========== CREATE MODEL CONFIGS ==========
-    vision_cfg = BiomedCLIPVisionCfg(
+    vision_cfg = CLIPVisionCfg(
         layers=vision_layers,
         width=vision_width,
         head_width=64,  # Standard for ViT
@@ -349,7 +349,7 @@ def build_model_from_biomedclip_state_dict(
         output_tokens=True,  # BiomedCLIP outputs all tokens
     )
     
-    text_cfg = BiomedCLIPTextCfg(
+    text_cfg = CLIPTextCfg(
         context_length=context_length,
         vocab_size=vocab_size,
         width=text_width,
