@@ -77,6 +77,7 @@ def load_biomedclip_model(
             if key.startswith(prefix):
                 key = key[len(prefix):]
         cleaned_state_dict[key] = v
+    print("Cleaned state dict keys", list(cleaned_state_dict.keys())[:5], "...")
 
     # Determine cast dtype
     cast_dtype = get_cast_dtype(precision)
