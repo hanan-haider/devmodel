@@ -102,7 +102,7 @@ def create_model(
             print(" After model config:", model_cfg )
             
 
-            print("model path of ckpt", _MODEL_CKPT_PATHS[model_name])
+            #print("model path of ckpt", _MODEL_CKPT_PATHS[model_name])
             model_pre = load_biomedclip_model(
                 name = _MODEL_CKPT_PATHS[model_name],
                 precision=precision,
