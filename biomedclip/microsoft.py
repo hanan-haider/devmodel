@@ -60,6 +60,7 @@ def load_biomedclip_model(
     # Load state dict (BiomedCLIP is never JIT)
     try:
         state_dict = torch.load(model_path, map_location="cpu")
+        print("Loaded state dict keys", list(state_dict.keys())[:5], "...")
     except Exception as e:
         raise RuntimeError(f"Failed to load model from {model_path}: {e}")
 
