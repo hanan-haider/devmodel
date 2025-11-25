@@ -14,6 +14,14 @@ except ImportError as e:
     transformers = None
 
 
+    class BaseModelOutput:
+        pass
+
+
+    class PretrainedConfig:
+        pass
+
+
 
 # utils
 def _camel2snake(s):
