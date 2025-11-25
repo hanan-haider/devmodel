@@ -9,7 +9,8 @@ from typing import List, Optional, Union
 
 import torch
 
-from .model import get_cast_dtype, convert_weights_to_lp, build_model_from_biomedclip_state_dict
+from .model import get_cast_dtype,  build_model_from_biomedclip_state_dict
+#convert_weights_to_lp,
 
 __all__ = ["load_biomedclip_model"]
 
