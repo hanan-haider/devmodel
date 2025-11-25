@@ -7,7 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 import torch
-from .model import CustomTextCLIP
+from .model import CustomTextCLIP , get_cast_dtype
 #from .model import CLIP, CustomTextCLIP, convert_weights_to_lp, convert_to_custom_text_state_dict, resize_pos_embed, get_cast_dtype
 from .microsoft import load_biomedclip_model  # Changed from openai to microsoft
 
