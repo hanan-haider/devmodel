@@ -80,6 +80,7 @@ def load_biomedclip_model(
 
     # Determine cast dtype
     cast_dtype = get_cast_dtype(precision)
+    print("building BiomedCLIP model...")
 
     # Build model from cleaned state dict
     try:
