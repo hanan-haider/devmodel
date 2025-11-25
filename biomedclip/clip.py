@@ -132,7 +132,7 @@ def create_model(
                 model = torch.jit.script(model)
         else:
             model = load_biomedclip_model(
-                model_name,
+                name = _MODEL_CKPT_PATHS[model_name],
                 precision=precision,
                 device=device,
                 jit=jit,
