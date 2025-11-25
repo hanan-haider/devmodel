@@ -16,6 +16,9 @@ except ImportError as e:
 
 
 
+# TODO: ?last - for gpt-like models
+_POOLERS = {}
+
 
 class HFTextEncoder(nn.Module):
     """HuggingFace model adapter"""
