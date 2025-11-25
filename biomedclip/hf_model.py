@@ -1,9 +1,8 @@
 
+""" huggingface model adapter
 
-
-
-
-
+Wraps HuggingFace transformers (https://github.com/huggingface/transformers) models for use as a text tower in CLIP model.
+"""
 
 
 
@@ -28,7 +27,6 @@ class HFTextEncoder(nn.Module):
         self.output_dim = output_dim
 
         # TODO: find better way to get this information
-        
         uses_transformer_pooler = (pooler_type == "cls_pooler")
 
         if transformers is None:

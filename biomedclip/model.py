@@ -12,6 +12,7 @@ from torch import nn
 from torch.utils.checkpoint import checkpoint
 from typing import Final
 from .timm_model import TimmModel
+from .hf_model import HFTextEncoder
 
 
 
