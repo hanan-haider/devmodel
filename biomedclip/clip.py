@@ -7,18 +7,17 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 import torch
-import numpy as np
-
-from .model import get_cast_dtype, CustomTextCLIP
-#from .model import CLIP, CustomTextCLIP #convert_weights_to_lp, convert_to_custom_text_state_dict, resize_pos_embed, get_cast_dtype
-#from .openai import load_openai_model
-from .microsoft import load_biomedclip_model
+from .model import CLIP, CustomTextCLIP, convert_weights_to_lp, convert_to_custom_text_state_dict, resize_pos_embed, get_cast_dtype
+from .microsoft import load_biomedclip_model  # Changed from openai to microsoft
 
 
 _MODEL_CONFIG_PATHS = [Path(__file__).parent / f"model_configs/"]
 _MODEL_CONFIGS = {}  # directory (model_name: config) of model architecture configs
-_MODEL_CKPT_PATHS = {'BiomedCLIP-PubMedBERT-ViT-B-16': Path(__file__).parent / "ckpt/open_clip_pytorch_model.bin"}
 
+# BiomedCLIP checkpoint path
+_MODEL_CKPT_PATHS = {
+    'BiomedCLIP-PubMedBERT-ViT-B-16': Path(__file__).parent / "ckpt/open_clip_pytorch_model.bin"
+}
 
 
 def _natural_key(string_):
@@ -54,21 +53,32 @@ def list_models():
     return list(_MODEL_CONFIGS.keys())
 
 
-
 def get_model_config(model_name):
-    # print(_MODEL_CONFIGS)
     if model_name in _MODEL_CONFIGS:
-        # print('herehere')
         return deepcopy(_MODEL_CONFIGS[model_name])
     else:
         return None
 
 
+def load_state_dict(checkpoint_path: str, map_location='cpu'):
+    checkpoint = torch.load(checkpoint_path, map_location=map_location)
+    if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
+        state_dict = checkpoint['state_dict']
+    else:
+        state_dict = checkpoint
+    if next(iter(state_dict.items()))[0].startswith('module'):
+        state_dict = {k[7:]: v for k, v in state_dict.items()}
+    return state_dict
 
 
-
-
-
+def load_checkpoint(model, checkpoint_path, strict=True):
+    state_dict = load_state_dict(checkpoint_path)
+    # detect old format and make compatible with new format
+    if 'positional_embedding' in state_dict and not hasattr(model, 'positional_embedding'):
+        state_dict = convert_to_custom_text_state_dict(state_dict)
+    resize_pos_embed(state_dict, model)
+    incompatible_keys = model.load_state_dict(state_dict, strict=strict)
+    return incompatible_keys
 
 
 def create_model(
@@ -79,13 +89,24 @@ def create_model(
         device: Union[str, torch.device] = 'cpu',
         jit: bool = False,
         force_quick_gelu: bool = False,
-        force_custom_text: bool = True,
+        force_custom_text: bool = False,
         force_patch_dropout: Optional[float] = None,
         force_image_size: Optional[Union[int, Tuple[int, int]]] = None,
         output_dict: Optional[bool] = None,
         require_pretrained: bool = False,
-        adapter = False,
+        adapter=False,
 ):
+    """
+    Create model for both OpenAI CLIP and BiomedCLIP
+    
+    Args:
+        model_name: Model name (e.g., 'ViT-L-14-336' or 'BiomedCLIP-PubMedBERT-ViT-B-16')
+        img_size: Input image size
+        pretrained: 'openai' for OpenAI CLIP, 'microsoft' for BiomedCLIP
+        precision: Model precision ('fp32', 'fp16', 'bf16')
+        device: Device to load model on
+        ...
+    """
 
     model_name = model_name.replace('/', '-')  # for callers using old naming with / in ViT names
     checkpoint_path = None
@@ -94,35 +115,72 @@ def create_model(
     if isinstance(device, str):
         device = torch.device(device)
 
+    # ========== BiomedCLIP LOADING ==========
     if pretrained and pretrained.lower() == 'microsoft':
-        logging.info(f'Loading pretrained {model_name} .')
+        logging.info(f'Loading pretrained {model_name} from Microsoft (BiomedCLIP).')
+        
         model_cfg = model_cfg or get_model_config(model_name)
-        #print("here is the model config:", model_cfg )
-        if "timm_model_name" in model_cfg["vision_cfg"]:
-         # timm models have fixed image sizes
-            model_cfg["vision_cfg"]["image_size"] = 224
+        if model_cfg is None:
+            raise RuntimeError(f'Model config for {model_name} not found. Add BiomedCLIP-PubMedBERT-ViT-B-16.json to model_configs/')
+        
+        # Override image size if needed
+        if model_cfg['vision_cfg']['image_size'] != img_size:
+            model_cfg['vision_cfg']['image_size'] = img_size
+        
+        cast_dtype = get_cast_dtype(precision)
+        
+        # Load BiomedCLIP model
+        checkpoint_path = _MODEL_CKPT_PATHS.get(model_name)
+        if not checkpoint_path or not checkpoint_path.exists():
+            raise RuntimeError(f'Checkpoint not found for {model_name} at {checkpoint_path}')
+        
+        print(f'Loading BiomedCLIP from {checkpoint_path}')
+        model = load_biomedclip_model(
+            checkpoint_path=checkpoint_path,
+            model_cfg=model_cfg,
+            precision=precision,
+            device=device,
+            jit=jit,
+        )
+        
+        # Set image normalization (BiomedCLIP uses ImageNet stats)
+        model.visual.image_mean = (0.485, 0.456, 0.406)
+        model.visual.image_std = (0.229, 0.224, 0.225)
+        
+        if output_dict and hasattr(model, "output_dict"):
+            model.output_dict = True
+        
+        if jit:
+            model = torch.jit.script(model)
+        
+        return model
 
+    # ========== OpenAI CLIP LOADING ==========
+    elif pretrained and pretrained.lower() == 'openai':
+        logging.info(f'Loading pretrained {model_name} from OpenAI.')
+        model_cfg = model_cfg or get_model_config(model_name)
+        
+        if model_cfg['vision_cfg']['image_size'] != img_size:
+            model_cfg['vision_cfg']['image_size'] = img_size
             cast_dtype = get_cast_dtype(precision)
-            #print(" After model config:", model_cfg )
-            
 
-            #print("model path of ckpt", _MODEL_CKPT_PATHS[model_name])
-            model_pre = load_biomedclip_model(
-                name = _MODEL_CKPT_PATHS[model_name],
+            from .openai import load_openai_model
+            model_pre = load_openai_model(
+                name=_MODEL_CKPT_PATHS[model_name],
                 precision=precision,
                 device=device,
                 jit=jit,
             )
             state_dict = model_pre.state_dict()
-            print("Loaded pretrained model. Now creating model with modified image size.")
 
             # to always output dict even if it is clip
             if output_dict and hasattr(model_pre, "output_dict"):
                 model_pre.output_dict = True
 
-            model = CustomTextCLIP(**model_cfg, cast_dtype=cast_dtype)
+            model = CLIP(**model_cfg, cast_dtype=cast_dtype)
             ### for resnet
             if not hasattr(model.visual, 'grid_size'):
+                import numpy as np
                 model.visual.grid_size = int(np.sqrt(model.visual.attnpool.positional_embedding.shape[0] - 1))
             resize_pos_embed(state_dict, model)
             incompatible_keys = model.load_state_dict(state_dict, strict=True)
@@ -141,23 +199,23 @@ def create_model(
             if jit:
                 model = torch.jit.script(model)
         else:
-            model = load_biomedclip_model(
-                name = _MODEL_CKPT_PATHS[model_name],
+            from .openai import load_openai_model
+            model = load_openai_model(
+                model_name,
                 precision=precision,
                 device=device,
                 jit=jit,
-                cache_dir=cache_dir,
             )
 
             # to always output dict even if it is clip
             if output_dict and hasattr(model, "output_dict"):
                 model.output_dict = True
+    
+    # ========== Generic Model Loading (no pretrained weights) ==========
     else:
-        print('here')
         model_cfg = model_cfg or get_model_config(model_name)
         if model_cfg is not None:
             print(f'Loaded {model_name} model config.')
-            #print("Model config:", model_cfg)
         else:
             raise RuntimeError(f'Model config for {model_name} not found.')
 
@@ -173,10 +231,8 @@ def create_model(
             # override model config's image size
             model_cfg["vision_cfg"]["image_size"] = force_image_size
 
-
         cast_dtype = get_cast_dtype(precision)
         custom_text = model_cfg.pop('custom_text', False) or force_custom_text
-        #model_cfg=model_cfg.pop('preprocess_cfg', None)  # Remove if exists
 
         if custom_text:
             model = CustomTextCLIP(**model_cfg, cast_dtype=cast_dtype)
@@ -185,13 +241,13 @@ def create_model(
 
         pretrained_loaded = False
         if pretrained:
-            checkpoint_path = _MODEL_CKPT_PATHS[model_name]
+            checkpoint_path = _MODEL_CKPT_PATHS.get(model_name)
             if checkpoint_path:
                 print(f'Loading pretrained {model_name} weights ({pretrained}).')
                 load_checkpoint(model, checkpoint_path)
+                pretrained_loaded = True
             else:
                 raise RuntimeError(f'Pretrained weights ({pretrained}) not found for model {model_name}.')
-            pretrained_loaded = True
 
         if require_pretrained and not pretrained_loaded:
             # callers of create_model_from_pretrained always expect pretrained weights
