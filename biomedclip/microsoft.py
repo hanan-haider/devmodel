@@ -50,6 +50,7 @@ def load_biomedclip_model(
     preprocess : Callable[[PIL.Image], torch.Tensor]
         A torchvision transform that converts a PIL image into a tensor that the returned model can take as its input
     """
+    print("name inside biomedclip model loader:", name)
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
     if precision is None:
