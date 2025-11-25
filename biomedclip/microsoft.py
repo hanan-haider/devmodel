@@ -68,7 +68,7 @@ def load_biomedclip_model(
             warnings.warn(f"File {model_path} is not a JIT archive. Loading as a state dict instead")
             jit = False
         state_dict = torch.load(model_path, map_location="cpu")
-        print(f"Loaded state dict with keys: {list(state_dict.keys())}")
+        #print(f"Loaded state dict with keys: {list(state_dict.keys())}")
 
     if not jit:
         # Build model from state dict
@@ -85,7 +85,7 @@ def load_biomedclip_model(
                 sd = state_dict["state_dict"]
                 # Remove "module." prefix if present (from DataParallel/DistributedDataParallel)
                 sd = {k.replace("module.", ""): v for k, v in sd.items()}
-                model = build_model_from_openai_state_dict(sd, cast_dtype=cast_dtype)
+                model = build_model_from_biomedclip_state_dict(sd, cast_dtype=cast_dtype)
             else:
                 raise e
 
