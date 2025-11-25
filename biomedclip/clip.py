@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 import torch
 from .model import get_cast_dtype, CustomTextCLIP
-#from .model import CLIP, CustomTextCLIP, convert_weights_to_lp, convert_to_custom_text_state_dict, resize_pos_embed, get_cast_dtype
+#from .model import CLIP, CustomTextCLIP #convert_weights_to_lp, convert_to_custom_text_state_dict, resize_pos_embed, get_cast_dtype
 #from .openai import load_openai_model
 from .microsoft import load_biomedclip_model
 
@@ -115,7 +115,7 @@ def create_model(
             if output_dict and hasattr(model_pre, "output_dict"):
                 model_pre.output_dict = True
 
-            model = CLIP(**model_cfg, cast_dtype=cast_dtype)
+            model = CustomTextCLIP(**model_cfg, cast_dtype=cast_dtype)
             ### for resnet
             if not hasattr(model.visual, 'grid_size'):
                 model.visual.grid_size = int(np.sqrt(model.visual.attnpool.positional_embedding.shape[0] - 1))
