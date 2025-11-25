@@ -18,6 +18,7 @@ _MODEL_CONFIGS = {}  # directory (model_name: config) of model architecture conf
 _MODEL_CKPT_PATHS = {'BiomedCLIP-PubMedBERT-ViT-B-16': Path(__file__).parent / "ckpt/open_clip_pytorch_model.bin"}
 
 
+
 def _natural_key(string_):
     return [int(s) if s.isdigit() else s for s in re.split(r'(\d+)', string_.lower())]
 
@@ -99,7 +100,9 @@ def create_model(
             model_cfg['vision_cfg']['image_size'] = img_size
             cast_dtype = get_cast_dtype(precision)
             print(" After model config:", model_cfg )
+            
 
+            print("model path of ckpt", _MODEL_CKPT_PATHS[model_name])
             model_pre = load_biomedclip_model(
                 name = _MODEL_CKPT_PATHS[model_name],
                 precision=precision,
