@@ -6,6 +6,7 @@ Wraps HuggingFace transformers (https://github.com/huggingface/transformers) mod
 
 import torch
 import torch.nn as nn
+from torch import TensorType
 try:
     import transformers
     from transformers import AutoModel, AutoTokenizer, AutoConfig, PretrainedConfig
