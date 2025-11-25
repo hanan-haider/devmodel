@@ -77,7 +77,7 @@ def load_biomedclip_model(
         # Use the standard OpenAI state dict builder for BioMedCLIP
         # BioMedCLIP uses the same architecture as CLIP but with different weights
         try:
-            model = build_model_from_openai_state_dict(state_dict, cast_dtype=cast_dtype)
+            model = build_model_from_biomedclip_state_dict(state_dict, cast_dtype=cast_dtype)
         except Exception as e:
             print(f"Error building with standard state dict: {e}")
             # Try alternative state dict format (common in trained models)
