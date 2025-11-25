@@ -93,7 +93,7 @@ def create_model(
     if pretrained and pretrained.lower() == 'microsoft':
         logging.info(f'Loading pretrained {model_name} from OpenAI.')
         model_cfg = model_cfg or get_model_config(model_name)
-        # print(model_cfg['vision_cfg'])
+        print("here is the model config:", model_cfg )
         if model_cfg['vision_cfg']['image_size'] != img_size:
             model_cfg['vision_cfg']['image_size'] = img_size
             cast_dtype = get_cast_dtype(precision)
