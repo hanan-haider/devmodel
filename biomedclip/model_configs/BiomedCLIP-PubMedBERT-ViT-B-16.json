@@ -1,18 +1,18 @@
 {
   "embed_dim": 512,
   "vision_cfg": {
-    "image_size": 240,
-    "layers": 12,
-    "width": 768,
-    "patch_size": 16,
-    "heads": 12
-  },
+      "timm_model_name": "vit_base_patch16_224",
+      "timm_model_pretrained": false,
+      "timm_pool": "",
+      "timm_proj": "linear",
+      "image_size": 224
+    },
   "text_cfg": {
-    "hf_model_name": "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract",
-    "hf_tokenizer_name": "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract",
-    "context_length": 256,
-    "hf_proj_type": "mlp",
-    "hf_pooler_type": "cls_last_hidden_state_pooler"
-  }
+      "hf_model_name": "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract",
+      "hf_tokenizer_name": "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract",
+      "hf_proj_type": "mlp",
+      "hf_pooler_type": "cls_last_hidden_state_pooler",
+      "context_length": 256
+    }
 
 }
