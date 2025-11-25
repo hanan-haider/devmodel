@@ -97,6 +97,7 @@ def create_model(
         if model_cfg['vision_cfg']['image_size'] != img_size:
             model_cfg['vision_cfg']['image_size'] = img_size
             cast_dtype = get_cast_dtype(precision)
+            print(" After model config:", model_cfg )
 
             model_pre = load_biomedclip_model(
                 name = _MODEL_CKPT_PATHS[model_name],
