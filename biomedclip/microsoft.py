@@ -1,93 +1,100 @@
-""" OpenAI pretrained model functions
-
-Adapted from https://github.com/openai/CLIP. Originally MIT License, Copyright (c) 2021 OpenAI.
-"""
+""" OpenAI pretrained model functions — Adapted for BiomedCLIP """
 
 import os
 import warnings
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 import torch
 
-from .model import  get_cast_dtype
-#from .model import build_model_from_openai_state_dict, convert_weights_to_lp, get_cast_dtype
-#from .model import build_model_from_biomedclip_state_dict, convert_weights_to_lp ,get_cast_dtype
+from .model import get_cast_dtype
+#, build_model_from_biomedclip_state_dict, convert_weights_to_lp
 
 
-
-
-
- 
-
-__all__ = ["list_openai_models", "load_openai_model"]
+__all__ = ["load_biomedclip_model"]
 
 
 def load_biomedclip_model(
-        name: str,
-        precision: Optional[str] = None,
-        device: Optional[Union[str, torch.device]] = None,
-        jit: bool = True,
-        cache_dir: Optional[str] = None,
+    name: str,
+    precision: Optional[str] = None,
+    device: Optional[Union[str, torch.device]] = None,
+    jit: bool = False,  # BiomedCLIP is NOT jitted → default False
+    cache_dir: Optional[str] = None,
 ):
-    """Load a CLIP model
+    """
+    Load BiomedCLIP model from local .pth/.bin or HuggingFace-style state_dict.
+    Fully compatible with: microsoft/BiomedCLIP-PubMedBERT-ViT-B-16
 
     Parameters
     ----------
     name : str
-        A model name listed by `clip.available_models()`, or the path to a model checkpoint containing the state_dict
-    precision: str
-        Model precision, if None defaults to 'fp32' if device == 'cpu' else 'fp16'.
-    device : Union[str, torch.device]
-        The device to put the loaded model
+        Local path to .pth/.bin file OR pretrained identifier (e.g. 'microsoft')
+    precision : str, optional
+        'fp16', 'fp32', 'bf16', or 'amp'
+    device : str or torch.device, optional
+        Target device
     jit : bool
-        Whether to load the optimized JIT model (default) or more hackable non-JIT model.
-    cache_dir : Optional[str]
-        The directory to cache the downloaded model weights
+        Set False — BiomedCLIP checkpoints are regular state_dicts, not JIT
 
     Returns
     -------
     model : torch.nn.Module
-        The CLIP model
-    preprocess : Callable[[PIL.Image], torch.Tensor]
-        A torchvision transform that converts a PIL image into a tensor that the returned model can take as its input
+        Loaded and ready-to-use BiomedCLIP model
     """
-    print("name inside biomedclip model loader:", name)
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
     if precision is None:
-        precision = 'fp32' if device == 'cpu' else 'fp16'
+        precision = 'fp16' if device == 'cuda' else 'fp32'
 
+    device = torch.device(device)
+
+    # Resolve path if it's a local file
     if os.path.isfile(name):
         model_path = name
     else:
-        raise RuntimeError(f"Model {name} not found; available models")
+        # For HF-style loading (e.g., 'microsoft'), assume it's handled upstream
+        # Or fallback: assume name is path
+        model_path = name
 
+    print(f"Loading BiomedCLIP model from: {model_path}")
+
+    # Load state dict (BiomedCLIP is never JIT)
     try:
-        # loading JIT archive
-        model = torch.jit.load(model_path, map_location=device if jit else "cpu").eval()
-        state_dict = None
-    except RuntimeError:
-        # loading saved state dict
-        if jit:
-            warnings.warn(f"File {model_path} is not a JIT archive. Loading as a state dict instead")
-            jit = False
         state_dict = torch.load(model_path, map_location="cpu")
-        #print(f"here is the state dict keys: {state_dict.keys()} ")
+    except Exception as e:
+        raise RuntimeError(f"Failed to load model from {model_path}: {e}")
 
-    if not jit:
-        # Build a non-jit model from the OpenAI jitted model state dict
-        cast_dtype = get_cast_dtype(precision)
-        try:
-            model = build_model_from_biomedclip_state_dict(state_dict or model.state_dict(), cast_dtype=cast_dtype)
-        except KeyError:
-            sd = {k[7:]: v for k, v in state_dict["state_dict"].items()}
-            model = build_model_from_biomedclip_state_dict(sd, cast_dtype=cast_dtype)
+    # Handle nested state_dict (common in HF caches)
+    if "state_dict" in state_dict:
+        state_dict = state_dict["state_dict"]
+    elif "model" in state_dict:
+        state_dict = state_dict["model"]
 
-        # model from OpenAI state dict is in manually cast fp16 mode, must be converted for AMP/fp32/bf16 use
-        model = model.to(device)
-        if precision.startswith('amp') or precision == 'fp32':
-            model.float()
-        elif precision == 'bf16':
-            convert_weights_to_lp(model, dtype=torch.bfloat16)
+    # Strip common prefixes: 'module.', 'model.', 'visual.', etc.
+    cleaned_state_dict = {}
+    for k, v in state_dict.items():
+        key = k
+        for prefix in ["module.", "model.", "visual.", "text."]:
+            if key.startswith(prefix):
+                key = key[len(prefix):]
+        cleaned_state_dict[key] = v
 
-        return model
+    # Determine cast dtype
+    cast_dtype = get_cast_dtype(precision)
+
+    # Build model from cleaned state dict
+    try:
+        model = build_model_from_biomedclip_state_dict(cleaned_state_dict, cast_dtype=cast_dtype)
+    except Exception as e:
+        raise RuntimeError(f"Failed to build BiomedCLIP model from state dict. Key mismatch? Error: {e}")
+
+    # Move to device and cast
+    model = model.to(device)
+
+    if precision == "fp32":
+        model.float()
+    elif precision == "bf16":
+        convert_weights_to_lp(model, dtype=torch.bfloat16)
+    # fp16 / amp: keep as-is (already in half if loaded that way)
+
+    model.eval()
+    return model
