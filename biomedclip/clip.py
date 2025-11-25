@@ -145,8 +145,8 @@ def create_model(
         )
         
         # Set image normalization (BiomedCLIP uses ImageNet stats)
-        model.visual.image_mean = (0.485, 0.456, 0.406)
-        model.visual.image_std = (0.229, 0.224, 0.225)
+        model.visual.image_mean = ( 0.48145466, 0.4578275, 0.40821073)
+        model.visual.image_std = (0.26862954, 0.26130258, 0.27577711)
         
         if output_dict and hasattr(model, "output_dict"):
             model.output_dict = True
