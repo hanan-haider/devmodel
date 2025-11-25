@@ -4,6 +4,9 @@
 Wraps HuggingFace transformers (https://github.com/huggingface/transformers) models for use as a text tower in CLIP model.
 """
 
+import torch
+import torch.nn as nn
+
 
 
 
