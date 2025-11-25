@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch import nn
 from torch.utils.checkpoint import checkpoint
 from typing import Final
-
+from .timm_model import TimmModel
 
 
 
@@ -124,24 +124,15 @@ def _build_vision_tower(
             mlp_ratio=vision_cfg.mlp_ratio,
             ls_init_value=vision_cfg.ls_init_value,
             patch_dropout=vision_cfg.patch_dropout,
+            input_patchnorm=vision_cfg.input_patchnorm,
+            global_average_pool=vision_cfg.global_average_pool,
             attentional_pool=vision_cfg.attentional_pool,
-            attn_pooler_queries=vision_cfg.attn_pooler_queries,
+            n_queries=vision_cfg.n_queries,
             attn_pooler_heads=vision_cfg.attn_pooler_heads,
-            pos_embed_type=vision_cfg.pos_embed_type,
-            no_ln_pre=vision_cfg.no_ln_pre,
-            final_ln_after_pool=vision_cfg.final_ln_after_pool,
-            pool_type=vision_cfg.pool_type,
             output_tokens=vision_cfg.output_tokens,
             output_dim=embed_dim,
             act_layer=act_layer,
             norm_layer=norm_layer,
-            block_type=vision_cfg.block_type,
-            qk_norm=vision_cfg.qk_norm,
-            scaled_cosine_attn=vision_cfg.scaled_cosine_attn,
-            scale_heads=vision_cfg.scale_heads,
-            scale_attn_inner=vision_cfg.scale_attn_inner,
-            scale_attn=vision_cfg.scale_attn,
-            scale_fc=vision_cfg.scale_fc,
         )
 
     return visual
@@ -182,26 +173,13 @@ def _build_text_tower(
             width=text_cfg.width,
             heads=text_cfg.heads,
             layers=text_cfg.layers,
-            mlp_ratio=text_cfg.mlp_ratio,
             ls_init_value=text_cfg.ls_init_value,
             output_dim=embed_dim,
             embed_cls=text_cfg.embed_cls,
-            no_causal_mask=text_cfg.no_causal_mask,
-            pad_id=text_cfg.pad_id,
-            eos_id=text_cfg.eos_id,
-            pool_type=text_cfg.pool_type,
-            proj_type=text_cfg.proj_type,
-            proj_bias=text_cfg.proj_bias,
             output_tokens=text_cfg.output_tokens,
+            pad_id=text_cfg.pad_id,
             act_layer=act_layer,
             norm_layer=norm_layer,
-            block_type=text_cfg.block_type,
-            qk_norm=text_cfg.qk_norm,
-            scaled_cosine_attn=text_cfg.scaled_cosine_attn,
-            scale_heads=text_cfg.scale_heads,
-            scale_attn_inner=text_cfg.scale_attn_inner,
-            scale_attn=text_cfg.scale_attn,
-            scale_fc=text_cfg.scale_fc,
         )
     return text
 
