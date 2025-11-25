@@ -24,6 +24,7 @@ class CLIPVisionCfg:
     mlp_ratio: float = 4.0
     patch_size: int = 16
     image_size: Union[Tuple[int, int], int] = 224
+    
     ls_init_value: Optional[float] = None  # layer scale initial value
     patch_dropout: float = 0.2  # what fraction of patches to dropout during training (0 would mean disabled and no patches dropped) - 0.5 to 0.75 recommended in the paper for optimal results
     input_patchnorm: bool = False # whether to use dual patchnorm - would only apply the input layernorm on each patch, as post-layernorm already exist in original clip vit design
@@ -38,6 +39,7 @@ class CLIPVisionCfg:
     timm_proj_bias: bool = False  # enable bias final projection
     timm_drop: float = 0.  # head dropout
     timm_drop_path: Optional[float] = None  # backbone stochastic depth
+    output_tokens: bool = True
 
 
 
