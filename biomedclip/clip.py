@@ -110,6 +110,7 @@ def create_model(
                 jit=jit,
             )
             state_dict = model_pre.state_dict()
+            print("Loaded pretrained model. Now creating model with modified image size.")
 
             # to always output dict even if it is clip
             if output_dict and hasattr(model_pre, "output_dict"):
