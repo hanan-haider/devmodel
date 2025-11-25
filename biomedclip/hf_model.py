@@ -7,9 +7,13 @@ Wraps HuggingFace transformers (https://github.com/huggingface/transformers) mod
 import torch
 import torch.nn as nn
 from torch import TensorType
+import re
+
 try:
     import transformers
     from transformers import AutoModel, AutoTokenizer, AutoConfig, PretrainedConfig
+    from transformers.modeling_outputs import BaseModelOutput, BaseModelOutputWithPooling, \
+        BaseModelOutputWithPoolingAndCrossAttentions
 except ImportError as e:
     transformers = None
 
@@ -20,7 +24,6 @@ except ImportError as e:
 
     class PretrainedConfig:
         pass
-
 
 
 # utils
