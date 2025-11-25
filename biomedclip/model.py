@@ -249,3 +249,146 @@ class CustomTextCLIP(nn.Module):
             }
         return image_features, text_features, self.logit_scale.exp()
 
+
+
+
+
+
+
+
+
+
+
+def build_model_from_biomedclip_state_dict(
+    state_dict: dict,
+    cast_dtype=torch.float16,
+):
+    """
+    Build BiomedCLIP model from official Microsoft checkpoint state_dict.
+    PRINT STATEMENTS ADDED ONLY — LOGIC NOT CHANGED.
+    """
+
+    print("\n=== [INFO] Extracting Vision Tower Parameters ===")
+
+    # === Vision Tower (ViT-B/16) ===
+    vision_width = state_dict["visual.trunk.patch_embed.proj.weight"].shape[0]  # 768
+    print(f"vision_width: {vision_width}")
+
+    vision_layers = len([
+        k for k in state_dict.keys()
+        if k.startswith("visual.trunk.blocks.") and k.endswith(".attn.qkv.weight")
+    ])  # 12
+    print(f"vision_layers: {vision_layers}")
+
+    vision_patch_size = state_dict["visual.trunk.patch_embed.proj.weight"].shape[-1]  # 16
+    print(f"vision_patch_size: {vision_patch_size}")
+
+    pos_embed_shape = state_dict["visual.trunk.pos_embed"].shape
+    print(f"pos_embed_shape: {pos_embed_shape}")
+
+    grid_size = int((pos_embed_shape[1] - 1) ** 0.5)  # 14
+    image_size = vision_patch_size * grid_size  # 224
+
+    print(f"grid_size: {grid_size}")
+    print(f"image_size: {image_size}")
+
+    print("\n=== [INFO] Extracting Text Tower Parameters ===")
+
+    # === Text Tower (PubMedBERT) ===
+    transformer_width = state_dict["text.transformer.embeddings.word_embeddings.weight"].shape[1]
+    print(f"transformer_width: {transformer_width}")
+
+    vocab_size = state_dict["text.transformer.embeddings.word_embeddings.weight"].shape[0]
+    print(f"vocab_size: {vocab_size}")
+
+    context_length = state_dict["text.transformer.embeddings.position_embeddings.weight"].shape[0]
+    print(f"context_length: {context_length}")
+
+    transformer_layers = len([
+        k for k in state_dict.keys()
+        if k.startswith("text.transformer.encoder.layer.") and k.endswith(".attention.self.query.weight")
+    ])
+    print(f"transformer_layers: {transformer_layers}")
+
+    transformer_heads = transformer_width // 64
+    print(f"transformer_heads: {transformer_heads}")
+
+    # Final embedding dimension
+    embed_dim = state_dict["visual.head.proj.weight"].shape[0]
+    print(f"embed_dim: {embed_dim}")
+
+    print("\n=== [INFO] Building Vision/Text Configs ===")
+
+    # === Configs ===
+    vision_cfg = CLIPVisionCfg(
+        layers=vision_layers,
+        width=vision_width,
+        patch_size=vision_patch_size,
+        image_size=image_size,
+        timm_model_name="vit_base_patch16_224",
+        timm_model_pretrained=False,
+        timm_pool='',
+        timm_proj='linear',
+    )
+    print(f"vision_cfg: {vision_cfg}")
+
+    text_cfg = CLIPTextCfg(
+        context_length=context_length,
+        vocab_size=vocab_size,
+        width=transformer_width,
+        heads=transformer_heads,
+        layers=transformer_layers,
+        hf_model_name='microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract',
+        hf_tokenizer_name='microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract',
+        hf_proj_type='mlp',
+        hf_pooler_type='cls_last_hidden_state_pooler',
+    )
+    print(f"text_cfg: {text_cfg}")
+
+    print("\n=== [INFO] Creating CLIP Model ===")
+
+    # === Build Model ===
+    model = CustomTextCLIP(
+        embed_dim=embed_dim,
+        vision_cfg=vision_cfg,
+        text_cfg=text_cfg,
+        quick_gelu=False,
+        cast_dtype=cast_dtype,
+    )
+    print(f"Model created successfully! (dtype={cast_dtype})")
+
+    print("\n=== [INFO] Cleaning State Dict Keys ===")
+
+    # === Load weights ===
+    for key in ["logit_scale", "text.transformer.embeddings.position_ids"]:
+        if key in state_dict:
+            print(f"Removing key: {key}")
+        state_dict.pop(key, None)
+
+    if "text.proj.weight" in state_dict:
+        print("Removing: text.proj.weight")
+        del state_dict["text.proj.weight"]
+
+    if "text.proj.bias" in state_dict:
+        print("Removing: text.proj.bias")
+        del state_dict["text.proj.bias"]
+
+    print("\n=== [INFO] Loading Weights Into Model ===")
+
+    missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+
+    print(f"Missing keys: {missing_keys[:10]}")
+    print(f"Unexpected keys: {unexpected_keys[:10]}")
+
+    critical_missing = [k for k in missing_keys if not k.startswith("text.proj.")]
+    if critical_missing:
+        print(f"WARNING: Critical missing keys: {critical_missing[:10]}")
+
+    # FP16 conversion
+    if cast_dtype == torch.float16:
+        print("\nConverting model to fp16...")
+        model = model.half()
+
+    print("\n=== [INFO] Model Build COMPLETE ===\n")
+
+    return model.eval()

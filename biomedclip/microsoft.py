@@ -6,7 +6,7 @@ from typing import Optional, Union
 
 import torch
 
-from .model import get_cast_dtype
+from .model import get_cast_dtype , build_model_from_biomedclip_state_dict
 #, build_model_from_biomedclip_state_dict, convert_weights_to_lp
 
 
@@ -60,7 +60,7 @@ def load_biomedclip_model(
     # Load state dict (BiomedCLIP is never JIT)
     try:
         state_dict = torch.load(model_path, map_location="cpu")
-        print("Loaded state dict keys", list(state_dict.keys())[:5], "...")
+        #print("Loaded state dict keys", list(state_dict.keys())[:5], "...")
     except Exception as e:
         raise RuntimeError(f"Failed to load model from {model_path}: {e}")
 
@@ -70,23 +70,15 @@ def load_biomedclip_model(
     elif "model" in state_dict:
         state_dict = state_dict["model"]
 
-    # Strip common prefixes: 'module.', 'model.', 'visual.', etc.
-    cleaned_state_dict = {}
-    for k, v in state_dict.items():
-        key = k
-        for prefix in ["module.", "model.", "visual.", "text."]:
-            if key.startswith(prefix):
-                key = key[len(prefix):]
-        cleaned_state_dict[key] = v
-    print("Cleaned state dict keys", list(cleaned_state_dict.keys())[:5], "...")
+
 
     # Determine cast dtype
     cast_dtype = get_cast_dtype(precision)
-    print("building BiomedCLIP model...")
+    #print("building BiomedCLIP model...")
 
     # Build model from cleaned state dict
     try:
-        model = build_model_from_biomedclip_state_dict(cleaned_state_dict, cast_dtype=cast_dtype)
+        model = build_model_from_biomedclip_state_dict(state_dict, cast_dtype=cast_dtype)
     except Exception as e:
         raise RuntimeError(f"Failed to build BiomedCLIP model from state dict. Key mismatch? Error: {e}")
 
