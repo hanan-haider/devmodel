@@ -132,7 +132,7 @@ def create_model(
         
         # Load BiomedCLIP model
         checkpoint_path = _MODEL_CKPT_PATHS.get(model_name)
-        print("here is the checkpoint path ". checkpoint_path)
+        print("here is the checkpoint path ", checkpoint_path)
         if not checkpoint_path or not checkpoint_path.exists():
             raise RuntimeError(f'Checkpoint not found for {model_name} at {checkpoint_path}')
         
