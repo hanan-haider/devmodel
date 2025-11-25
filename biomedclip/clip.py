@@ -98,6 +98,7 @@ def create_model(
         #print("here is the model config:", model_cfg )
         if model_cfg['vision_cfg']['image_size'] != img_size:
             model_cfg['vision_cfg']['image_size'] = img_size
+        else:
             cast_dtype = get_cast_dtype(precision)
             #print(" After model config:", model_cfg )
             
