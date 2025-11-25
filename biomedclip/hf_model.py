@@ -15,11 +15,19 @@ except ImportError as e:
 
 
 
+# utils
+def _camel2snake(s):
+    return re.sub(r'(?<!^)(?=[A-Z])', '_', s).lower()
+
 
 # TODO: ?last - for gpt-like models
 _POOLERS = {}
 
 
+def register_pooler(cls):
+    """Decorator registering pooler class"""
+    _POOLERS[_camel2snake(cls.__name__)] = cls
+    return cls
 
 @register_pooler
 class ClsLastHiddenStatePooler(nn.Module):
