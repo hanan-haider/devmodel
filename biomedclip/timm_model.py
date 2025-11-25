@@ -17,7 +17,8 @@ try:
 except ImportError:
     timm = None
 
-from .utils import freeze_batch_norm_2d
+from biomedclip.utils import freeze_batch_norm_2d
+
 
 
 class TimmModel(nn.Module):
