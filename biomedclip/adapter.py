@@ -33,19 +33,25 @@ class CLIP_Inplanted(nn.Module):
         super().__init__()
         self.clipmodel = clip_model
         
-        # BiomedCLIP uses TimmModel wrapper around VisionTransformer
+        # BioMedCLIP uses TimmModel wrapper around VisionTransformer
         # Access: clip_model.visual.trunk (the actual ViT)
         self.image_encoder = clip_model.visual.trunk
-        self.visual_proj = clip_model.visual.proj  # Final projection layer
+        
+        # BioMedCLIP uses visual.head.proj instead of visual.proj
+        if hasattr(clip_model.visual, 'head') and hasattr(clip_model.visual.head, 'proj'):
+            self.visual_proj = clip_model.visual.head.proj  # Final projection layer
+        else:
+            # Fallback: check if it's directly accessible
+            self.visual_proj = getattr(clip_model.visual, 'proj', None)
         
         self.features = features
         
-        # BiomedCLIP ViT-B has 768 hidden dimensions (not 1024)
+        # BioMedCLIP ViT-B has 768 hidden dimensions
         self.seg_adapters = nn.ModuleList([ClipAdapter(768, bottleneck=768) for i in range(len(features))])
         self.det_adapters = nn.ModuleList([ClipAdapter(768, bottleneck=768) for i in range(len(features))])
 
     def forward(self, x):
-        # BiomedCLIP uses timm's ViT which has a different forward structure
+        # BioMedCLIP uses timm's ViT which has a different forward structure
         B = x.shape[0]
         
         # Patch embedding
@@ -65,15 +71,12 @@ class CLIP_Inplanted(nn.Module):
         det_patch_tokens = []
         
         # Process through transformer blocks
-        # BiomedCLIP ViT-B has 12 blocks (layers)
+        # BioMedCLIP ViT-B has 12 blocks (layers)
         for i, block in enumerate(self.image_encoder.blocks):
             x = block(x)
             
             # Extract attention at layer 12 (index 11)
             if i + 1 == 12:
-                # For timm ViT, attention is inside the block
-                # We need to get it from the last block's attention module
-                # Note: timm doesn't return attention by default, so we store x
                 attn_out.append(x)  # Store the output instead
             
             # Apply adapters at specified feature layers
@@ -93,53 +96,65 @@ class CLIP_Inplanted(nn.Module):
         # Global pooling (extract cls token)
         pooled = x[:, 0]  # CLS token
         
-        # Apply visual projection
+        # Apply visual projection if it exists
         if self.visual_proj is not None:
             pooled = self.visual_proj(pooled)
         
         return pooled, seg_patch_tokens, det_patch_tokens
 
 
-# Alternative version with attention extraction (if you need actual attention maps)
-class CLIP_Inplanted_WithAttention(nn.Module):
+# Alternative version that handles different BioMedCLIP architectures
+class CLIP_Inplanted_BioMed(nn.Module):
     def __init__(self, clip_model, features):
         super().__init__()
         self.clipmodel = clip_model
-        self.image_encoder = clip_model.visual.trunk
-        self.visual_proj = clip_model.visual.proj
+        
+        # Handle different BioMedCLIP visual encoder structures
+        if hasattr(clip_model.visual, 'trunk'):
+            # BioMedCLIP with TimmModel wrapper
+            self.image_encoder = clip_model.visual.trunk
+        else:
+            # Standard CLIP structure
+            self.image_encoder = clip_model.visual
+        
+        # Handle different projection layer locations
+        self.visual_proj = None
+        if hasattr(clip_model.visual, 'head') and hasattr(clip_model.visual.head, 'proj'):
+            self.visual_proj = clip_model.visual.head.proj
+        elif hasattr(clip_model.visual, 'proj'):
+            self.visual_proj = clip_model.visual.proj
+        
         self.features = features
         
+        # BioMedCLIP ViT-B has 768 hidden dimensions
         self.seg_adapters = nn.ModuleList([ClipAdapter(768, bottleneck=768) for i in range(len(features))])
         self.det_adapters = nn.ModuleList([ClipAdapter(768, bottleneck=768) for i in range(len(features))])
-        
-        # Hook to capture attention
-        self.attention_maps = []
-        self._register_attention_hooks()
-    
-    def _register_attention_hooks(self):
-        """Register hooks to capture attention maps from the 12th block"""
-        def hook_fn(module, input, output):
-            # Capture attention weights
-            self.attention_maps.append(output)
-        
-        # Register hook on the 12th block's attention module
-        if len(self.image_encoder.blocks) >= 12:
-            self.image_encoder.blocks[11].attn.register_forward_hook(hook_fn)
-    
+
     def forward(self, x):
         B = x.shape[0]
-        self.attention_maps = []  # Reset attention maps
         
-        # Patch embedding
-        x = self.image_encoder.patch_embed(x)
-        
-        # Add cls token
-        cls_token = self.image_encoder.cls_token.expand(B, -1, -1)
-        x = torch.cat((cls_token, x), dim=1)
-        
-        # Add positional embedding
-        x = x + self.image_encoder.pos_embed
-        x = self.image_encoder.pos_drop(x)
+        # Handle different forward passes based on architecture
+        if hasattr(self.image_encoder, 'patch_embed'):
+            # Timm ViT forward pass
+            x = self.image_encoder.patch_embed(x)
+            
+            # Add cls token
+            cls_token = self.image_encoder.cls_token.expand(B, -1, -1)
+            x = torch.cat((cls_token, x), dim=1)
+            
+            # Add positional embedding
+            x = x + self.image_encoder.pos_embed
+            x = self.image_encoder.pos_drop(x)
+        else:
+            # Standard CLIP forward pass
+            x = self.image_encoder.conv1(x)  # patch embedding
+            x = x.reshape(x.shape[0], x.shape[1], -1)  # (B, C, H*W)
+            x = x.permute(0, 2, 1)  # (B, H*W, C)
+            
+            # Add class token and position embedding
+            cls_tokens = self.image_encoder.class_embedding.expand(B, -1, -1)
+            x = torch.cat((cls_tokens, x), dim=1)
+            x = x + self.image_encoder.positional_embedding
         
         seg_patch_tokens = []
         det_patch_tokens = []
@@ -159,12 +174,13 @@ class CLIP_Inplanted_WithAttention(nn.Module):
                 det_patch_tokens.append(det_adapt_med)
         
         # Apply final layer norm
-        x = self.image_encoder.norm(x)
+        if hasattr(self.image_encoder, 'norm'):
+            x = self.image_encoder.norm(x)
         
-        # Global pooling
+        # Global pooling (extract cls token)
         pooled = x[:, 0]
         
-        # Apply visual projection
+        # Apply visual projection if it exists
         if self.visual_proj is not None:
             pooled = self.visual_proj(pooled)
         
