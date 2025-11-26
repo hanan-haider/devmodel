@@ -97,7 +97,7 @@ def main():
 
     model = CLIP_Inplanted(clip_model=clip_model, features=args.features_list).to(device)
     model.eval()
-    print("here is the model", model)
+    #print("here is the model", model)
 
     for name, param in model.named_parameters():
         param.requires_grad = True

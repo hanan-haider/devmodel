@@ -1,4 +1,41 @@
 
+import torch
+import ftfy
+import html
+from typing import Callable, List, Optional, Union, Dict
+
+
+DEFAULT_CONTEXT_LENGTH = 77  # default context length for OpenAI CLIP
+
+
+
+def basic_clean(text):
+    text = ftfy.fix_text(text)
+    text = html.unescape(html.unescape(text))
+    return text.strip()
+
+
+
+def whitespace_clean(text):
+    text = " ".join(text.split())
+    text = text.strip()
+    return text
+
+def _clean_whitespace(x):
+    # basic, remove whitespace
+    return whitespace_clean(basic_clean(x))
+
+def get_clean_fn(type: str):
+    if type == 'canonicalize':
+        return _clean_canonicalize
+    elif type == 'lower':
+        return _clean_lower
+    elif type == 'whitespace':
+        return _clean_whitespace
+    else:
+        assert False, f"Invalid clean function ({type})."
+
+      
 
 
 class HFTokenizer:
