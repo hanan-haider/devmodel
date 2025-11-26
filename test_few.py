@@ -51,7 +51,7 @@ def main():
     parser.add_argument('--obj', type=str, default='Liver')
     parser.add_argument('--data_path', type=str, default='./data/',
                         help="path to dataset"  )
-    #parser.add_argument('--data_path', type=str, default='/kaggle/input/preprocessed/Liver')
+    parser.add_argument('--data_path', type=str, default='/kaggle/input/preprocessed/Liver')
 
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--save_model', type=int, default=1)
