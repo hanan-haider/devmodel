@@ -41,6 +41,26 @@ def register_pooler(cls):
     _POOLERS[_camel2snake(cls.__name__)] = cls
     return cls
 
+
+
+@register_pooler
+class ClsPooler(nn.Module):
+    """CLS token pooling"""
+
+    def __init__(self, use_pooler_output=True):
+        super().__init__()
+        self.cls_token_position = 0
+        self.use_pooler_output = use_pooler_output
+
+    def forward(self, x: BaseModelOutput, attention_mask: TensorType):
+        if (self.use_pooler_output and
+            isinstance(x, (BaseModelOutputWithPooling, BaseModelOutputWithPoolingAndCrossAttentions)) and
+            (x.pooler_output is not None)
+        ):
+            return x.pooler_output
+
+        return x.last_hidden_state[:, self.cls_token_position, :]
+
 @register_pooler
 class ClsLastHiddenStatePooler(nn.Module):
     """CLS token pooling
