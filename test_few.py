@@ -27,6 +27,9 @@ device = torch.device("cuda:0" if use_cuda else "cpu")
 
 CLASS_INDEX = {'Brain':3, 'Liver':2, 'Retina_RESC':1, 'Retina_OCT2017':-1, 'Chest':-2, 'Histopathology':-3}
 
+# Global variables that will be accessible across cells
+global_vars = { }
+
 def setup_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)

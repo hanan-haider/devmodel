@@ -315,18 +315,7 @@ def build_model_from_biomedclip_state_dict(
         cast_dtype=cast_dtype,
     )
 
-    # === Clean and load weights ===
-    print("Cleaning state_dict and loading weights...")
-    for key in ["logit_scale", "text.transformer.embeddings.position_ids"]:
-        if key in state_dict:
-            print(f"   Removing unnecessary key: {key}")
-            state_dict.pop(key)
 
-    if "text.proj.weight" in state_dict:
-        print("   Removing legacy text.proj.weight (BiomedCLIP uses layered projection)")
-        del state_dict["text.proj.weight"]
-    if "text.proj.bias" in state_dict:
-        del state_dict["text.proj.bias"]
 
     print("   Loading state_dict into model (strict=False)...")
     missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
