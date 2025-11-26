@@ -114,7 +114,7 @@ def create_model(
                 jit=jit,
             )
             state_dict = model_pre.state_dict()
-            print("Loaded pretrained model. Now creating model with modified image size.")
+            #print("Loaded pretrained model. Now creating model with modified image size.")
 
             # to always output dict even if it is clip
             if output_dict and hasattr(model_pre, "output_dict"):
@@ -126,8 +126,8 @@ def create_model(
 
             # 1) Compute grid size from pos_embed
             #if not hasattr(model.visual, "grid_size"):
-                # pos_embed shape: (1, 197, 768)
-                # 197 = 1 (CLS) + 196 (14x14 grid)
+            #    pos_embed shape: (1, 197, 768)
+            #    197 = 1 (CLS) + 196 (14x14 grid)
             #    num_patches = model.visual.trunk.pos_embed.shape[1] - 1
             #    grid_size = int((num_patches) ** 0.5)     # → 14
             #    model.visual.grid_size = grid_size
