@@ -188,3 +188,8 @@ class HFTokenizer:
         # Add class token at the end
         tokens = tokens + [cls_token_id]
         return tokens
+
+tokenize = HFTokenizer(
+    tokenizer_name="microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract",
+    context_length=256
+)
