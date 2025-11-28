@@ -157,7 +157,7 @@ def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
     return text_features
 
         
- """
+"""
     # Optional: add some very direct class names (helps in few-shot/zero-shot)
     direct_terms = [
         f"{base_term} normal finding",
@@ -176,9 +176,9 @@ def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
     
     # Average all features for this class (or you can max-pool, etc.)
     text_features = text_features.mean(dim=0, keepdim=True)
-    return text_features"""
+    return text_features
 
-"""def encode_text_with_prompt_ensemble(model, obj, device):
+    def encode_text_with_prompt_ensemble(model, obj, device):
     prompt_normal = ['{}', 'flawless {}', 'perfect {}', 'unblemished {}', '{} without flaw', '{} without defect', '{} without damage']
     prompt_abnormal = ['damaged {}', 'broken {}', '{} with flaw', '{} with defect', '{} with damage']
     prompt_state = [prompt_normal, prompt_abnormal]
@@ -190,7 +190,8 @@ def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
         prompted_sentence = []
         for s in prompted_state:
             for template in prompt_templates:
-                prompted_sentence.append(template.format(s))"""
+                prompted_sentence.append(template.format(s))
+"""
 
 
 
