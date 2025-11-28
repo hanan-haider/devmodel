@@ -147,6 +147,17 @@ def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
             for template in templates:
                 prompted_sentences.append(template.format(phrase))
 
+               
+        class_embeddings = model.encode_text(prompted_sentence)
+        class_embeddings /= class_embeddings.norm(dim=-1, keepdim=True)
+        class_embedding = class_embeddings.mean(dim=0)
+        class_embedding /= class_embedding.norm()
+        text_features.append(class_embedding)
+    text_features = torch.stack(text_features, dim=1).to(device)
+    return text_features
+
+        
+ """
     # Optional: add some very direct class names (helps in few-shot/zero-shot)
     direct_terms = [
         f"{base_term} normal finding",
@@ -157,7 +168,7 @@ def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
     prompted_sentences.extend(direct_terms)
 
     # Tokenize all at once (much faster)
-    """texts = tokenize(prompted_sentences).to(device)
+   texts = tokenize(prompted_sentences).to(device)
     
     with torch.no_grad():
         text_features = model.encode_text(texts)
@@ -180,14 +191,7 @@ def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
         for s in prompted_state:
             for template in prompt_templates:
                 prompted_sentence.append(template.format(s))"""
-        prompted_sentence = tokenize(prompted_sentence).to(device)
-        class_embeddings = model.encode_text(prompted_sentence)
-        class_embeddings /= class_embeddings.norm(dim=-1, keepdim=True)
-        class_embedding = class_embeddings.mean(dim=0)
-        class_embedding /= class_embedding.norm()
-        text_features.append(class_embedding)
-    text_features = torch.stack(text_features, dim=1).to(device)
-    return text_features
+
 
 
 def cos_sim(a, b, eps=1e-8):
