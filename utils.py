@@ -62,7 +62,6 @@ from biomedclip.tokenizer import tokenize
 
 
 
-
 def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
     # obj will be like "Brain", "Liver,as", etc. → we map to proper medical terms
     medical_names = {
@@ -84,7 +83,7 @@ def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
         f"{base_term} showing normal anatomy",
         f"{base_term} of a healthy individual",
         f"unremarkable {base_term}",
-        f"negative {base_term}", 
+        f"negative {base_term}",
         f"{base_term} without pathology",
         f"normal-appearing {base_term}",
         f"{base_term} in a patient with no disease",
@@ -112,7 +111,7 @@ def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
         f"affected {base_term}"
     ]
 
-    # === Medical report–style templates (very strong with BioMedCLIP) ===
+    # === Medical report–style templates ===
     templates = [
         "A medical image of {}.",
         "Imaging shows {}.",
@@ -124,7 +123,7 @@ def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
         "Diagnostic image of {}.",
         "Pathology slide of {}.",
         "Clinical photograph of {}.",
-        "{}.",  # direct caption style (very common in PMC)
+        "{}.",
         "Caption: {}.",
         "Finding: {}.",
         "Observation: {}.",
@@ -141,18 +140,21 @@ def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
 
     # Combine everything
     prompted_sentences = []
-    
+    text_features = []
+
     for state_list in [prompt_normal, prompt_abnormal]:
         for phrase in state_list:
             for template in templates:
                 prompted_sentences.append(template.format(phrase))
 
-        prompted_sentence = tokenize(prompted_sentences).to(device)    
+        # FIXED INDENTATION — this part must be OUTSIDE inner loops
+        prompted_sentence = tokenize(prompted_sentences).to(device)
         class_embeddings = model.encode_text(prompted_sentence)
         class_embeddings /= class_embeddings.norm(dim=-1, keepdim=True)
         class_embedding = class_embeddings.mean(dim=0)
         class_embedding /= class_embedding.norm()
         text_features.append(class_embedding)
+
     text_features = torch.stack(text_features, dim=1).to(device)
     return text_features
 
