@@ -15,7 +15,7 @@ from biomedclip.adapter import CLIP_Inplanted
 from PIL import Image
 from sklearn.metrics import roc_auc_score, precision_recall_curve, pairwise
 from loss import FocalLoss, BinaryDiceLoss
-from utils import augment, cos_sim, encode_text_with_prompt_ensemble
+from utils import augment, cos_sim, encode_text_with_biomedclip_prompt_ensemble
 from prompt import REAL_NAME
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -141,7 +141,7 @@ def main():
 
     # text prompt
     with torch.cuda.amp.autocast(), torch.no_grad():
-        text_features = encode_text_with_prompt_ensemble(clip_model, REAL_NAME[args.obj], device)
+        text_features = encode_text_with_biomedclip_prompt_ensemble(clip_model, REAL_NAME[args.obj], device)
 
     best_result = 0
 
