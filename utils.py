@@ -73,7 +73,7 @@ def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
         'Chest': 'chest X-ray',
         'Histopathology': 'histopathology slide'
     }
-    base_term = medical_names[obj]
+    base_term = medical_names[args.obj]
 
     # === Normal / Healthy prompts ===
     prompt_normal = [
