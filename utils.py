@@ -147,7 +147,7 @@ def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
             for template in templates:
                 prompted_sentences.append(template.format(phrase))
 
-        prompted_sentence = tokenize(prompted_sentence).to(device)    
+        prompted_sentence = tokenize(prompted_sentences).to(device)    
         class_embeddings = model.encode_text(prompted_sentence)
         class_embeddings /= class_embeddings.norm(dim=-1, keepdim=True)
         class_embedding = class_embeddings.mean(dim=0)
