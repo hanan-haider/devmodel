@@ -61,7 +61,113 @@ from PIL import Image
 from biomedclip.tokenizer import tokenize
 
 
-def encode_text_with_prompt_ensemble(model, obj, device):
+
+
+def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
+    # obj will be like "Brain", "Liver,as", etc. → we map to proper medical terms
+    medical_names = {
+        'Brain': 'brain MRI',
+        'Liver': 'liver CT',
+        'Retina_RESC': 'retinal color fundus photograph',
+        'Retina_OCT2017': 'retinal OCT image',
+        'Chest': 'chest X-ray',
+        'Histopathology': 'histopathology slide'
+    }
+    base_term = medical_names[obj]
+
+    # === Normal / Healthy prompts ===
+    prompt_normal = [
+        f"normal {base_term}",
+        f"healthy {base_term}",
+        f"{base_term} without abnormality",
+        f"{base_term} with no lesion",
+        f"{base_term} showing normal anatomy",
+        f"{base_term} of a healthy individual",
+        f"unremarkable {base_term}",
+        f"negative {base_term}", 
+        f"{base_term} without pathology",
+        f"normal-appearing {base_term}",
+        f"{base_term} in a patient with no disease",
+        f"control {base_term}"
+    ]
+
+    # === Abnormal / Diseased prompts ===
+    prompt_abnormal = [
+        f"abnormal {base_term}",
+        f"pathological {base_term}",
+        f"{base_term} with lesion",
+        f"{base_term} showing abnormality",
+        f"{base_term} with disease",
+        f"{base_term} demonstrating pathology",
+        f"{base_term} with tumor",
+        f"{base_term} with mass",
+        f"{base_term} with hemorrhage",
+        f"{base_term} with edema",
+        f"{base_term} with infarction",
+        f"{base_term} with pneumonia",
+        f"{base_term} with metastasis",
+        f"{base_term} with inflammatory changes",
+        f"{base_term} in a patient with known disease",
+        f"{base_term} positive for malignancy",
+        f"affected {base_term}"
+    ]
+
+    # === Medical report–style templates (very strong with BioMedCLIP) ===
+    templates = [
+        "A medical image of {}.",
+        "Imaging shows {}.",
+        "The scan reveals {}.",
+        "Radiology image: {}.",
+        "This is {}.",
+        "Medical scan depicting {}.",
+        "Figure showing {}.",
+        "Diagnostic image of {}.",
+        "Pathology slide of {}.",
+        "Clinical photograph of {}.",
+        "{}.",  # direct caption style (very common in PMC)
+        "Caption: {}.",
+        "Finding: {}.",
+        "Observation: {}.",
+        "The image demonstrates {}.",
+        "Evidence of {} on imaging.",
+        "There is {} present.",
+        "Image findings consistent with {}.",
+        "Representative image of {}.",
+        "Example of {}.",
+        "A case of {}.",
+        "Patient with {}.",
+        "Study demonstrating {}.",
+    ]
+
+    # Combine everything
+    prompted_sentences = []
+    
+    for state_list in [prompt_normal, prompt_abnormal]:
+        for phrase in state_list:
+            for template in templates:
+                prompted_sentences.append(template.format(phrase))
+
+    # Optional: add some very direct class names (helps in few-shot/zero-shot)
+    direct_terms = [
+        f"{base_term} normal finding",
+        f"{base_term} abnormal finding",
+        f"{base_term} pathology negative",
+        f"{base_term} pathology positive",
+    ]
+    prompted_sentences.extend(direct_terms)
+
+    # Tokenize all at once (much faster)
+    """texts = tokenize(prompted_sentences).to(device)
+    
+    with torch.no_grad():
+        text_features = model.encode_text(texts)
+        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+    
+    # Average all features for this class (or you can max-pool, etc.)
+    text_features = text_features.mean(dim=0, keepdim=True)
+    return text_features"""
+
+"""def encode_text_with_prompt_ensemble(model, obj, device):
     prompt_normal = ['{}', 'flawless {}', 'perfect {}', 'unblemished {}', '{} without flaw', '{} without defect', '{} without damage']
     prompt_abnormal = ['damaged {}', 'broken {}', '{} with flaw', '{} with defect', '{} with damage']
     prompt_state = [prompt_normal, prompt_abnormal]
@@ -73,7 +179,7 @@ def encode_text_with_prompt_ensemble(model, obj, device):
         prompted_sentence = []
         for s in prompted_state:
             for template in prompt_templates:
-                prompted_sentence.append(template.format(s))
+                prompted_sentence.append(template.format(s))"""
         prompted_sentence = tokenize(prompted_sentence).to(device)
         class_embeddings = model.encode_text(prompted_sentence)
         class_embeddings /= class_embeddings.norm(dim=-1, keepdim=True)
