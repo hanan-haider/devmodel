@@ -95,12 +95,7 @@ def main():
     #print(clip_model)
     clip_model.eval()
     
-    context_length = clip_model.context_length
-    vocab_size = clip_model.vocab_size
 
-    print("Model parameters:", f"{np.sum([int(np.prod(p.shape)) for p in clip_model.parameters()]):,}")
-    print("Context length:", context_length)
-    print("Vocab size:", vocab_size)
 
     model = CLIP_Inplanted(clip_model=clip_model, features=args.features_list).to(device)
     model.eval()
