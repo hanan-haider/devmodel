@@ -1,3 +1,4 @@
+#%%writefile /kaggle/working/devmodel/test.py
 import os
 import argparse
 import random
@@ -15,7 +16,7 @@ from biomedclip.adapter import CLIP_Inplanted
 from PIL import Image
 from sklearn.metrics import roc_auc_score, precision_recall_curve, pairwise
 from loss import FocalLoss, BinaryDiceLoss
-from utils import augment, cos_sim, encode_text_with_prompt_ensemble
+from utils import augment, cos_sim, encode_text_with_biomedclip_prompt_ensemble
 from prompt import REAL_NAME
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -37,7 +38,6 @@ def setup_seed(seed):
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-
 
 
 
@@ -63,8 +63,6 @@ def main():
                         help="BiomedCLIP trained with 224x224 resolution")
     parser.add_argument("--epoch", type=int, default=50)
     parser.add_argument("--learning_rate", type=float, default=0.001)
-
-    
     parser.add_argument("--features_list", type=int, nargs="+", default=[3, 6, 9, 12],
                         help="layer features used for adapters")    
     parser.add_argument('--seed', type=int, default=111)
@@ -87,9 +85,12 @@ def main():
   #for printing at the outset of training
 
     setup_seed(args.seed)
+
+    
     
     # fixed feature extractor
     clip_model = create_model(model_name=args.model_name, img_size=args.img_size, device=device, pretrained=args.pretrain, require_pretrained=True)
+    #print(clip_model)
     clip_model.eval()
 
     model = CLIP_Inplanted(clip_model=clip_model, features=args.features_list).to(device)
@@ -107,11 +108,11 @@ def main():
     det_optimizer = torch.optim.Adam(list(model.det_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
 
 
-
     # load test dataset
     kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
     test_dataset = MedDataset(args.data_path, args.obj, args.img_size, args.shot, args.iterate)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
+
 
 
     # few-shot image augmentation
@@ -127,6 +128,7 @@ def main():
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=True, **kwargs)
 
 
+
     # memory bank construction
     support_dataset = torch.utils.data.TensorDataset(augment_normal_img)
     support_loader = torch.utils.data.DataLoader(support_dataset, batch_size=1, shuffle=True, **kwargs)
@@ -140,7 +142,7 @@ def main():
 
     # text prompt
     with torch.cuda.amp.autocast(), torch.no_grad():
-        text_features = encode_text_with_prompt_ensemble(clip_model, REAL_NAME[args.obj], device)
+        text_features = encode_text_with_biomedclip_prompt_ensemble(clip_model, REAL_NAME[args.obj], device)
 
     best_result = 0
 
@@ -159,6 +161,7 @@ def main():
     
 
     result = test(args, model, test_loader, text_features, seg_mem_features, det_mem_features)
+          
 
 
 def test(args, model, test_loader, text_features, seg_mem_features, det_mem_features):
@@ -174,6 +177,14 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
     for (image, y, mask) in tqdm(test_loader):
         image = image.to(device)
         mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
+
+        # Process each item in the batch separately
+        batch_size = image.shape[0]
+        
+        for i in range(batch_size):
+            single_image = image[i:i+1]  # Keep batch dimension
+            single_y = y[i]
+            single_mask = mask[i]
 
         with torch.no_grad(), torch.cuda.amp.autocast():
             _, seg_patch_tokens, det_patch_tokens = model(image)
@@ -198,7 +209,10 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                 anomaly_maps = []
                 for layer in range(len(seg_patch_tokens)):
                     seg_patch_tokens[layer] /= seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                    anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
+                    vision_proj = model.visual_proj  # maps 768 -> 512
+                    proj_tokens = seg_patch_tokens[layer] @ vision_proj.weight.T
+                    anomaly_map = (proj_tokens @ text_features).unsqueeze(0)
+                    #anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
                     B, L, C = anomaly_map.shape
                     H = int(np.sqrt(L))
                     anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
@@ -228,19 +242,26 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                 anomaly_score = 0
                 for layer in range(len(det_patch_tokens)):
                     det_patch_tokens[layer] /= det_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                    anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)
+
+                    #projection layer 
+                    vision_proj = model.visual_proj  # maps 768 -> 512
+                    proj_tokens = det_patch_tokens[layer] @ vision_proj.weight.T
+                    anomaly_map = (proj_tokens @ text_features).unsqueeze(0)
+                    #anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
                     anomaly_score += anomaly_map.mean()
                 det_image_scores_zero.append(anomaly_score.cpu().numpy())
 
             
-            gt_mask_list.append(mask.squeeze().cpu().detach().numpy())
-            gt_list.extend(y.cpu().detach().numpy())
+            # Append individual items
+            gt_mask_list.append(single_mask.cpu().detach().numpy())
+            gt_list.append(single_y.cpu().detach().numpy())
             
 
+    # Rest of the function remains the same
     gt_list = np.array(gt_list)
-    gt_mask_list = np.asarray(gt_mask_list)
-    gt_mask_list = (gt_mask_list>0).astype(np.int_)
+    gt_mask_list = np.array(gt_mask_list)  # Now all masks have same shape
+    gt_mask_list = (gt_mask_list > 0).astype(np.int_)
 
 
     if CLASS_INDEX[args.obj] > 0:
@@ -274,8 +295,6 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
         print(f'{args.obj} AUC : {round(img_roc_auc_det,4)}')
 
         return img_roc_auc_det
-
-
 
 
 
