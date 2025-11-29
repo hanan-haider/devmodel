@@ -36,6 +36,8 @@ class CLIP_Inplanted(nn.Module):
         # BioMedCLIP uses TimmModel wrapper around VisionTransformer
         # Access: clip_model.visual.trunk (the actual ViT)
         self.image_encoder = clip_model.visual.trunk
+        print("Using BioMedCLIP visual encoder:", self.image_encoder)
+
         
         # BioMedCLIP uses visual.head.proj instead of visual.proj
         if hasattr(clip_model.visual, 'head') and hasattr(clip_model.visual.head, 'proj'):
@@ -44,7 +46,7 @@ class CLIP_Inplanted(nn.Module):
             # Fallback: check if it's directly accessible
             self.visual_proj = getattr(clip_model.visual, 'proj', None)
         
-        self.features = features
+        self.features = features 
         
         # BioMedCLIP ViT-B has 768 hidden dimensions
         self.seg_adapters = nn.ModuleList([ClipAdapter(768, bottleneck=768) for i in range(len(features))])
