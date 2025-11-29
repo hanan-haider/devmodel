@@ -36,7 +36,19 @@ class CLIP_Inplanted(nn.Module):
         # BioMedCLIP uses TimmModel wrapper around VisionTransformer
         # Access: clip_model.visual.trunk (the actual ViT)
         self.image_encoder = clip_model.visual.trunk
+        #print("Using BioMedCLIP visual encoder:", self.image_encoder)
+
+
+        self.image_encoder = clip_model.visual.trunk
         print("Using BioMedCLIP visual encoder:", self.image_encoder)
+
+        # Count parameters
+        total_params = sum(p.numel() for p in self.image_encoder.parameters())
+        trainable_params = sum(p.numel() for p in self.image_encoder.parameters() if p.requires_grad)
+
+        print(f"Total parameters in vision encoder: {total_params:,}")
+        print(f"Trainable parameters: {trainable_params:,}")
+
 
         
         # BioMedCLIP uses visual.head.proj instead of visual.proj
