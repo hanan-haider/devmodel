@@ -40,7 +40,7 @@ class CLIP_Inplanted(nn.Module):
 
 
         self.image_encoder = clip_model.visual.trunk
-        print("Using BioMedCLIP visual encoder:", self.image_encoder)
+        #print("Using BioMedCLIP visual encoder:", self.image_encoder)
 
         # Count parameters
         total_params = sum(p.numel() for p in self.image_encoder.parameters())
