@@ -190,7 +190,7 @@ def main():
 
                         vision_proj = model.visual_proj  # 768 -> 512
                         #proj_tokens = seg_patch_tokens[layer] @ vision_proj.T  # now shape (196 × 512)
-                        proj_tokens = det_patch_tokens[layer] @ vision_proj.weight.T
+                        proj_tokens = seg_patch_tokens[layer] @ vision_proj.weight.T
                         anomaly_map = (100.0 * proj_tokens @ text_features).unsqueeze(0)
                         #anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
                         B, L, C = anomaly_map.shape
