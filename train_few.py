@@ -100,8 +100,7 @@ def main():
     model = CLIP_Inplanted(clip_model=clip_model, features=args.features_list).to(device)
     model.eval()
 
-    context_length = model.context_length
-    vocab_size = model.vocab_size
+
 
 
     #print("here is the model", model)
