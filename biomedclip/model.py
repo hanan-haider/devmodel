@@ -2,7 +2,9 @@
 from dataclasses import dataclass
 import logging
 import math
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, List, Dict
+from functools import partial
+
 from itertools import repeat
 import collections.abc
 import numpy as np
