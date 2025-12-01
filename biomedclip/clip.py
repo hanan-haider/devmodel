@@ -142,16 +142,17 @@ def create_model(
             
 
 
-            # 1) Compute grid size from pos_embed
-            #if not hasattr(model.visual, "grid_size"):
+            #1) Compute grid size from pos_embed
+            if not hasattr(model.visual, "grid_size"):
             #    pos_embed shape: (1, 197, 768)
             #    197 = 1 (CLS) + 196 (14x14 grid)
             #    num_patches = model.visual.trunk.pos_embed.shape[1] - 1
-            #    grid_size = int((num_patches) ** 0.5)     # → 14
-            #    model.visual.grid_size = grid_size
-            #    print(f"Set model.visual.grid_size to {model.visual.grid_size}")
+                grid_size = int((num_patches) ** 0.5)     # → 14
+                print(f"Computed grid_size: {grid_size}")
+                model.visual.grid_size = grid_size
+                print(f"Set model.visual.grid_size to {model.visual.grid_size}")
 
-            #resize_pos_embed_biomedclip(state_dict, model)
+            resize_pos_embed_biomedclip(state_dict, model)
             
             incompatible_keys = model.load_state_dict(state_dict, strict=True)
             model.to(device=device)
