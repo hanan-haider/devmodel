@@ -480,8 +480,6 @@ def build_model_from_biomedclip_state_dict(
     return model.eval()
     
 
-<<<<<<< HEAD
-
 
 import math
 import torch
