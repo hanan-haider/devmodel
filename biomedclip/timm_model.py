@@ -20,8 +20,6 @@ except ImportError:
 from utils import freeze_batch_norm_2d
 
 
-
-
 class TimmModel(nn.Module):
     """ timm model adapter
     """

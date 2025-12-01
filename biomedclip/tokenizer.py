@@ -1,8 +1,18 @@
+""" CLIP tokenizer
+
+Copied from https://github.com/openai/CLIP. Originally MIT License, Copyright (c) 2021 OpenAI.
+"""
 
 import torch
 import ftfy
 import html
 from typing import Callable, List, Optional, Union, Dict
+import warnings
+
+
+# https://stackoverflow.com/q/62691279
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+_nltk_init = False
 
 
 DEFAULT_CONTEXT_LENGTH = 77  # default context length for OpenAI CLIP

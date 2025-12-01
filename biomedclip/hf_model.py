@@ -1,13 +1,12 @@
-
 """ huggingface model adapter
 
 Wraps HuggingFace transformers (https://github.com/huggingface/transformers) models for use as a text tower in CLIP model.
 """
+import re
 
 import torch
 import torch.nn as nn
 from torch import TensorType
-import re
 
 try:
     import transformers
@@ -27,6 +26,7 @@ except ImportError as e:
 
 from .hf_configs import arch_dict
 
+
 # utils
 def _camel2snake(s):
     return re.sub(r'(?<!^)(?=[A-Z])', '_', s).lower()
@@ -41,6 +41,23 @@ def register_pooler(cls):
     _POOLERS[_camel2snake(cls.__name__)] = cls
     return cls
 
+
+@register_pooler
+class MeanPooler(nn.Module):
+    """Mean pooling"""
+
+    def forward(self, x: BaseModelOutput, attention_mask: TensorType):
+        masked_output = x.last_hidden_state * attention_mask.unsqueeze(-1)
+        return masked_output.sum(dim=1) / attention_mask.sum(-1, keepdim=True)
+
+
+@register_pooler
+class MaxPooler(nn.Module):
+    """Max pooling"""
+
+    def forward(self, x: BaseModelOutput, attention_mask: TensorType):
+        masked_output = x.last_hidden_state.masked_fill(attention_mask.unsqueeze(-1), -torch.inf)
+        return masked_output.max(1).values
 
 
 @register_pooler
@@ -60,6 +77,7 @@ class ClsPooler(nn.Module):
             return x.pooler_output
 
         return x.last_hidden_state[:, self.cls_token_position, :]
+
 
 @register_pooler
 class ClsLastHiddenStatePooler(nn.Module):
