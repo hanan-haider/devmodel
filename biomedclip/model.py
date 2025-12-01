@@ -480,7 +480,7 @@ def build_model_from_biomedclip_state_dict(
     return model.eval()
     
 
-"""
+
 def resize_pos_embed_biomedclip(state_dict, model, interpolation='bicubic', antialias=True):
     # BiomedCLIP stores pos embedding here:
     old_pos_embed = state_dict.get('visual.trunk.pos_embed', None)
@@ -519,4 +519,4 @@ def resize_pos_embed_biomedclip(state_dict, model, interpolation='bicubic', anti
     # combine cls + resized grid tokens
     new_pos_embed = torch.cat([cls_token, patch_tokens], dim=0)
     state_dict['visual.trunk.pos_embed'] = new_pos_embed.unsqueeze(0)  # add batch dim back
-"""
+    
