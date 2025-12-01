@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 import torch
 import numpy as np
 
-from .model import get_cast_dtype, CustomTextCLIP, resize_pos_embed_biomedclip
+from .model import get_cast_dtype, CustomTextCLIP # resize_pos_embed_biomedclip
 #from .model import CLIP, CustomTextCLIP #convert_weights_to_lp, convert_to_custom_text_state_dict, resize_pos_embed, get_cast_dtype
 #from .openai import load_openai_model
 from .microsoft import load_biomedclip_model
@@ -101,14 +101,14 @@ def create_model(
         print("\n here is the model config: \n", model_cfg )
 
         # If the requested image size is different from the config
-        if model_cfg["vision_cfg"].get("image_size") != img_size:
-            print(f"[INFO] Overriding BiomedCLIP image_size: {model_cfg['vision_cfg']['image_size']} → {img_size}")
+        #if model_cfg["vision_cfg"].get("image_size") != img_size:
+        #    print(f"[INFO] Overriding BiomedCLIP image_size: {model_cfg['vision_cfg']['image_size']} → {img_size}")
 
             # Update the config
-            model_cfg["vision_cfg"]["image_size"] = img_size
+            #model_cfg["vision_cfg"]["image_size"] = img_size
 
             # BiomedCLIP uses precision casting for speed & stability
-            cast_dtype = get_cast_dtype(precision)
+            #cast_dtype = get_cast_dtype(precision)
 
 
 
@@ -116,11 +116,11 @@ def create_model(
         #    model_cfg['vision_cfg']['image_size'] = img_size
         #    cast_dtype = get_cast_dtype(precision)
 
-        #if "timm_model_name" in model_cfg["vision_cfg"]:
-         # timm models have fixed image sizes
-           # model_cfg["vision_cfg"]["image_size"] = 224
+        if "timm_model_name" in model_cfg["vision_cfg"]:
+            timm models have fixed image sizes
+            model_cfg["vision_cfg"]["image_size"] = 224
 
-           # cast_dtype = get_cast_dtype(precision)
+            cast_dtype = get_cast_dtype(precision)
             #print(" After model config:", model_cfg )
             
 
@@ -143,16 +143,16 @@ def create_model(
 
 
             #1) Compute grid size from pos_embed
-            if not hasattr(model.visual, "grid_size"):
+            #if not hasattr(model.visual, "grid_size"):
             #    pos_embed shape: (1, 197, 768)
             #    197 = 1 (CLS) + 196 (14x14 grid)
-                num_patches = model.visual.trunk.pos_embed.shape[1] - 1
-                grid_size = int((num_patches) ** 0.5)     # → 14
-                print(f"Computed grid_size: {grid_size}")
-                model.visual.grid_size = grid_size
-                print(f"Set model.visual.grid_size to {model.visual.grid_size}")
+            #    num_patches = model.visual.trunk.pos_embed.shape[1] - 1
+            #    grid_size = int((num_patches) ** 0.5)     # → 14
+            #    print(f"Computed grid_size: {grid_size}")
+            #    model.visual.grid_size = grid_size
+            #    print(f"Set model.visual.grid_size to {model.visual.grid_size}")
 
-            resize_pos_embed_biomedclip(state_dict, model)
+            #resize_pos_embed_biomedclip(state_dict, model)
             
             incompatible_keys = model.load_state_dict(state_dict, strict=True)
             model.to(device=device)
