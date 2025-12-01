@@ -97,7 +97,8 @@ def create_model(
     if pretrained and pretrained.lower() == 'microsoft':
         logging.info(f'Loading pretrained {model_name} .')
         model_cfg = model_cfg or get_model_config(model_name)
-        #print("here is the model config:", model_cfg )
+
+        print("\n here is the model config:", model_cfg,"\n" )
 
         if model_cfg['vision_cfg']['image_size'] != img_size:
         model_cfg['vision_cfg']['image_size'] = img_size
