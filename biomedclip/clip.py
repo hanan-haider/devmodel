@@ -146,7 +146,7 @@ def create_model(
             if not hasattr(model.visual, "grid_size"):
             #    pos_embed shape: (1, 197, 768)
             #    197 = 1 (CLS) + 196 (14x14 grid)
-            #    num_patches = model.visual.trunk.pos_embed.shape[1] - 1
+                num_patches = model.visual.trunk.pos_embed.shape[1] - 1
                 grid_size = int((num_patches) ** 0.5)     # → 14
                 print(f"Computed grid_size: {grid_size}")
                 model.visual.grid_size = grid_size
