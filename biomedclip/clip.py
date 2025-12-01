@@ -110,8 +110,6 @@ def create_model(
             # BiomedCLIP uses precision casting for speed & stability
             cast_dtype = get_cast_dtype(precision)
 
-        else:
-            cast_dtype = get_cast_dtype(precision)
 
 
         #if model_cfg['vision_cfg']['image_size'] != img_size:
