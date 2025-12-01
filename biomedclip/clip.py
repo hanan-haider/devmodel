@@ -101,8 +101,8 @@ def create_model(
         print("\n here is the model config:", model_cfg,"\n" )
 
         if model_cfg['vision_cfg']['image_size'] != img_size:
-        model_cfg['vision_cfg']['image_size'] = img_size
-        cast_dtype = get_cast_dtype(precision)
+            model_cfg['vision_cfg']['image_size'] = img_size
+            cast_dtype = get_cast_dtype(precision)
 
         #if "timm_model_name" in model_cfg["vision_cfg"]:
          # timm models have fixed image sizes
