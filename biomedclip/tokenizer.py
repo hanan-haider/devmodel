@@ -2,7 +2,7 @@
 
 Copied from https://github.com/openai/CLIP. Originally MIT License, Copyright (c) 2021 OpenAI.
 """
-
+import os
 import torch
 import ftfy
 import html
