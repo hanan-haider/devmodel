@@ -98,7 +98,7 @@ def create_model(
         logging.info(f'Loading pretrained {model_name} .')
         model_cfg = model_cfg or get_model_config(model_name)
 
-        print("\n here is the model config:", model_cfg,"\n" )
+        print("\n here is the model config: \n", model_cfg )
 
         # If the requested image size is different from the config
         if model_cfg["vision_cfg"].get("image_size") != img_size:
