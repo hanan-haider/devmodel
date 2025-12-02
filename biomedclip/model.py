@@ -153,9 +153,15 @@ def _build_text_tower(
         text_cfg: CLIPTextCfg,
         quick_gelu: bool = False,
         cast_dtype: Optional[torch.dtype] = None,
+
 ):
+    print("\n Building text tower...")
+    print("Here is the text config:", text_cfg,"\n")
+
     if isinstance(text_cfg, dict):
         text_cfg = CLIPTextCfg(**text_cfg)
+    
+    print("\nText config:", text_cfg)
 
     if text_cfg.hf_model_name:
         text = HFTextEncoder(

@@ -93,6 +93,8 @@ class ClsLastHiddenStatePooler(nn.Module):
         return x.last_hidden_state[:, self.cls_token_position, :]
 
 
+
+
 class HFTextEncoder(nn.Module):
     """HuggingFace model adapter"""
     output_tokens: torch.jit.Final[bool]
