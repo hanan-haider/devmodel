@@ -15,63 +15,92 @@ from torch.utils.checkpoint import checkpoint
 from typing import Final
 from .timm_model import TimmModel
 from .hf_model import HFTextEncoder
-
-
-
-
-@dataclass
-class CLIPVisionCfg:
-    layers: Union[Tuple[int, int, int, int], int] = 12
-    width: int = 768
-    head_width: int = 64
-    mlp_ratio: float = 4.0
-    patch_size: int = 16
-    image_size: Union[Tuple[int, int], int] = 224
-    ls_init_value: Optional[float] = None  # layer scale initial value
-
-    patch_dropout: float = 0.05  # what fraction of patches to dropout during training (0 would mean disabled and no patches dropped) - 0.5 to 0.75 recommended in the paper for optimal results
-
-    input_patchnorm: bool = True # whether to use dual patchnorm - would only apply the input layernorm on each patch, as post-layernorm already exist in original clip vit design
-    global_average_pool: bool = False  # whether to global average pool the last embedding layer, instead of using CLS token (https://arxiv.org/abs/2205.01580)
-    attentional_pool: bool = False # whether to use attentional pooler in the last embedding layer
-    n_queries: int = 256 # n_queries for attentional pooler
-    attn_pooler_heads: int = 8 # n heads for attentional_pooling
-
-    # hugging face timm model integration
-    
-    timm_model_name: Optional[str] = None  # a valid model name overrides layers, width, patch_size
-    timm_model_pretrained: bool = False  # use (imagenet) pretrained weights for named model
-    timm_pool: str = ''  # feature pooling for timm model ('abs_attn', 'rot_attn', 'avg', '')
-    timm_proj: str = 'linear'  # linear projection for timm model output ('linear', 'mlp', '')
-    timm_proj_bias: bool = False  # enable bias final projection
-    timm_drop: float = 0.1  # head dropout
-    timm_drop_path: Optional[float] = 0.1 # backbone stochastic depth
-
+from dataclasses import dataclass
+from typing import Optional, Tuple, Union
 
 @dataclass
-class CLIPTextCfg:
-    context_length: int = 77
-    vocab_size: int = 49408
-    width: int = 512
-    heads: int = 8
+class BioMedCLIPVisionCfg:
+    # Vision tower: timm ViT-B/16 
+    image_size: int = 224
     layers: int = 12
-    ls_init_value: Optional[float] = None  # layer scale initial value
-    hf_model_name: str = None
-    hf_tokenizer_name: str = None
-    hf_model_pretrained: bool = True
-    proj: str = 'mlp'
-    pooler_type: str = 'mean_pooler'
-    embed_cls: bool = False
+    width: int = 768
+    patch_size: int = 16
+    heads: int = 12
+    mlp_ratio: float = 4.0
+    ls_init_value: Optional[float] = None
+    patch_dropout: float = 0.0
+    input_patchnorm: bool = False
+    global_average_pool: bool = False
+    attentional_pool: bool = False
+    n_queries: int = 256
+    attn_pooler_heads: int = 8
+    
+    # TIMEL MODEL CONFIGURATION - CRITICAL FOR LOADING
+    timm_model_name: str = "vit_base_patch16_224"
+    timm_model_pretrained: bool = False  # Must be False to load BioMedCLIP weights
+    timm_pool: str = ''  # Empty string for ViT models
+    timm_proj: str = 'linear'  # Must be 'linear' for proper projection
+    timm_proj_bias: bool = False
+    timm_drop: float = 0.0
+    timm_drop_path: Optional[float] = None
+    
+    # Additional vision parameters
+    output_tokens: bool = True  # For adapter layers
+
+@dataclass
+class BioMedCLIPTextCfg:
+    # Text tower: PubMedBERT
+    context_length: int = 256  # BioMedCLIP uses 256, not 512
+    vocab_size: int = 30522
+    width: int = 768
+    heads: int = 12
+    layers: int = 12
+    mlp_ratio: float = 4.0
+    ls_init_value: Optional[float] = None
+    output_dim: int = 512
+    embed_cls: bool = True
+    
+    # HF configuration - MUST MATCH OFFICIAL CONFIG
+    hf_model_name: str = "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract"
+    # CORRECTION: Use abstract, NOT abstract-fulltext for BioMedCLIP
+    hf_tokenizer_name: Optional[str] = "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract" #can Auto-infer from model name
+    hf_proj_type: str = 'mlp'  # BioMedCLIP uses MLP projection
+    hf_pooler_type: str = 'cls_last_hidden_state_pooler'
+    
+    # Additional parameters
     pad_id: int = 0
-    output_tokens: bool = False
+    output_tokens: bool = True  # For text features if needed
 
-    # HuggingFace specific text tower config
-    hf_model_name: Optional[str] = None
-    hf_model_pretrained: bool = True
-    hf_proj_type: str = 'mlp'
-    hf_pooler_type: str = 'mean_pooler'  # attentional pooling for HF models
+@dataclass
+class BioMedCLIPCfg:
+    embed_dim: int = 512  # Joint embedding dimension
+    vision_cfg: BioMedCLIPVisionCfg = BioMedCLIPVisionCfg()
+    text_cfg: BioMedCLIPTextCfg = BioMedCLIPTextCfg()
+    
+    # Training parameters
+    init_logit_scale: float = 0.07
+    init_logit_bias: Optional[float] = None
+    cast_dtype: Optional[str] = None  # Let it auto-detect
+    quick_gelu: bool = False  # BioMedCLIP uses standard GELU
+    fp32_attention: bool = False
+    fp32_temperature: bool = False
+    freeze_image_encoder: bool = False
+    freeze_text_encoder: bool = False
+
+@dataclass
+class BioMedCLIPCfg:
+    embed_dim: int = 512
+    vision_cfg: BioMedCLIPVisionCfg = BioMedCLIPVisionCfg()
+    text_cfg: BioMedCLIPTextCfg = BioMedCLIPTextCfg()
+
+    # Training settings (from paper)
+    temperature_init: float = 0.07
+    use_quick_gelu: bool = False        # PubMedBERT uses standard GELU
+    cast_dtype: Optional[str] = None
 
 
+# Or build it yourself from config (if you're not using OpenCLIP directly)
+cfg = BioMedCLIPCfg()
 
 
 def get_cast_dtype(precision: str):
@@ -450,7 +479,7 @@ def build_model_from_biomedclip_state_dict(
         hf_proj_type='mlp',
         hf_pooler_type='cls_last_hidden_state_pooler',
     )
-    print("\ntext configs inside build model from state dict:", text_cfg)
+    #print("\ntext configs inside build model from state dict:", text_cfg)
 
     print("Creating CustomTextCLIP model instance...")
     model = CustomTextCLIP(
