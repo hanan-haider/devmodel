@@ -437,6 +437,7 @@ def build_model_from_biomedclip_state_dict(
         timm_pool='',
         timm_proj='linear',
     )
+    print("vision configs inside build model from state dict:", vision_cfg)
 
     text_cfg = CLIPTextCfg(
         context_length=context_length,
