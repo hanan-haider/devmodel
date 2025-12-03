@@ -87,6 +87,7 @@ class BioMedCLIPCfg:
     freeze_image_encoder: bool = False
     freeze_text_encoder: bool = False
 
+"""
 @dataclass
 class BioMedCLIPCfg:
     embed_dim: int = 512
@@ -97,11 +98,10 @@ class BioMedCLIPCfg:
     temperature_init: float = 0.07
     use_quick_gelu: bool = False        # PubMedBERT uses standard GELU
     cast_dtype: Optional[str] = None
-
+"""
 
 # Or build it yourself from config (if you're not using OpenCLIP directly)
 cfg = BioMedCLIPCfg()
-
 
 def get_cast_dtype(precision: str):
     cast_dtype = None
@@ -110,9 +110,6 @@ def get_cast_dtype(precision: str):
     elif precision == 'fp16':
         cast_dtype = torch.float16
     return cast_dtype
-
-    
-
 
 def _build_vision_tower(
         embed_dim: int,
