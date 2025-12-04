@@ -60,6 +60,8 @@ class BioMedCLIPTextCfg:
     hf_tokenizer_name: Optional[str] = "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract"
     hf_proj_type: str = 'mlp'
     hf_pooler_type: str = 'cls_last_hidden_state_pooler'
+
+    hf_model_pretrained: bool = True
     pad_id: int = 0
     output_tokens: bool = True
 
