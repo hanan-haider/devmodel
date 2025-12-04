@@ -443,7 +443,7 @@ def build_model_from_biomedclip_state_dict(
           f"vocab={vocab_size}, ctx_len={context_length}, embed_dim={embed_dim}")
 
     # === Configs ===
-    vision_cfg = CLIPVisionCfg(
+    vision_cfg = BioMedCLIPVisionCfg(
         layers=vision_layers,
         width=vision_width,
         patch_size=vision_patch_size,
@@ -455,7 +455,7 @@ def build_model_from_biomedclip_state_dict(
     )
     print("\nvision configs inside build model from state dict:", vision_cfg)
 
-    text_cfg = CLIPTextCfg(
+    text_cfg = BioMedCLIPTextCfg(
         context_length=context_length,
         vocab_size=vocab_size,
         width=transformer_width,
