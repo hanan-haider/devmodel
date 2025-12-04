@@ -89,6 +89,9 @@ class CustomTextCLIP:
     freeze_image_encoder: bool = False
     freeze_text_encoder: bool = False
 
+
+    cfg = BioMedCLIPCfg()
+
 """
 @dataclass
 class BioMedCLIPCfg:
@@ -103,7 +106,7 @@ class BioMedCLIPCfg:
 """
 
 # Or build it yourself from config (if you're not using OpenCLIP directly)
-cfg = BioMedCLIPCfg()
+
 
 def get_cast_dtype(precision: str):
     cast_dtype = None
