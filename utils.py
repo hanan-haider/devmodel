@@ -150,7 +150,19 @@ def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
         # FIXED INDENTATION — this part must be OUTSIDE inner loops
         prompted_sentence = tokenize(prompted_sentences).to(device)
         class_embeddings = model.encode_text(prompted_sentence)
-        print("Here is the class embedding",class_embeddings,class_embedding.shape, type(class_embeddings))
+        print("class_embeddings (raw):", class_embeddings)
+        print("type:", type(class_embeddings))
+
+        if isinstance(class_embeddings, tuple):
+            print("Tuple length:", len(class_embeddings))
+            for i, item in enumerate(class_embeddings):
+                try:
+                    print(f"  item[{i}] type:", type(item))
+                    print(f"  item[{i}] shape:", item.shape)
+                except AttributeError:
+                    print(f"  item[{i}] has no shape attribute:", item)
+
+
 
         class_embeddings /= class_embeddings.norm(dim=-1, keepdim=True)
         class_embedding = class_embeddings.mean(dim=0)
