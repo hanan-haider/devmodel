@@ -18,9 +18,11 @@ from .hf_model import HFTextEncoder
 from dataclasses import dataclass , field
 from typing import Optional, Tuple, Union
 
+# QUICK FIX: Define the missing class in the current session
+from dataclasses import dataclass, field
+
 @dataclass
 class BioMedCLIPVisionCfg:
-    # Vision tower: timm ViT-B/16 
     image_size: int = 224
     layers: int = 12
     width: int = 768
@@ -34,23 +36,18 @@ class BioMedCLIPVisionCfg:
     attentional_pool: bool = False
     n_queries: int = 256
     attn_pooler_heads: int = 8
-    
-    # TIMEL MODEL CONFIGURATION - CRITICAL FOR LOADING
     timm_model_name: str = "vit_base_patch16_224"
-    timm_model_pretrained: bool = False  # Must be False to load BioMedCLIP weights
-    timm_pool: str = ''  # Empty string for ViT models
-    timm_proj: str = 'linear'  # Must be 'linear' for proper projection
+    timm_model_pretrained: bool = False
+    timm_pool: str = ''
+    timm_proj: str = 'linear'
     timm_proj_bias: bool = False
     timm_drop: float = 0.0
     timm_drop_path: Optional[float] = None
-    
-    # Additional vision parameters
-    output_tokens: bool = True  # For adapter layers
+    output_tokens: bool = True
 
 @dataclass
 class BioMedCLIPTextCfg:
-    # Text tower: PubMedBERT
-    context_length: int = 256  # BioMedCLIP uses 256, not 512
+    context_length: int = 256
     vocab_size: int = 30522
     width: int = 768
     heads: int = 12
@@ -59,38 +56,26 @@ class BioMedCLIPTextCfg:
     ls_init_value: Optional[float] = None
     output_dim: int = 512
     embed_cls: bool = True
-    
-    # HF configuration - MUST MATCH OFFICIAL CONFIG
     hf_model_name: str = "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract"
-    # CORRECTION: Use abstract, NOT abstract-fulltext for BioMedCLIP
-    hf_tokenizer_name: Optional[str] = "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract" #can Auto-infer from model name
-    hf_proj_type: str = 'mlp'  # BioMedCLIP uses MLP projection
+    hf_tokenizer_name: Optional[str] = "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract"
+    hf_proj_type: str = 'mlp'
     hf_pooler_type: str = 'cls_last_hidden_state_pooler'
-    
-    # Additional parameters
     pad_id: int = 0
-    output_tokens: bool = True  # For text features if needed
+    output_tokens: bool = True
 
-
-
+# THIS IS THE MISSING CLASS - ADD IT!
 @dataclass
-class CustomTextCLIP:
+class BioMedCLIPCfg:
     vision_cfg: BioMedCLIPVisionCfg = field(default_factory=BioMedCLIPVisionCfg)
     text_cfg: BioMedCLIPTextCfg = field(default_factory=BioMedCLIPTextCfg)
-
-    
-    # Training parameters
+    embed_dim: int = 512
     init_logit_scale: float = 0.07
     init_logit_bias: Optional[float] = None
-    cast_dtype: Optional[str] = None  # Let it auto-detect
-    quick_gelu: bool = False  # BioMedCLIP uses standard GELU
-    fp32_attention: bool = False
-    fp32_temperature: bool = False
-    freeze_image_encoder: bool = False
-    freeze_text_encoder: bool = False
+    cast_dtype: Optional[str] = None
+    quick_gelu: bool = False
+    output_tokens: bool = True
 
-
-    cfg = BioMedCLIPCfg()
+print("BioMedCLIPCfg defined successfully!")
 
 """
 @dataclass
