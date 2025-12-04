@@ -15,7 +15,7 @@ from torch.utils.checkpoint import checkpoint
 from typing import Final
 from .timm_model import TimmModel
 from .hf_model import HFTextEncoder
-from dataclasses import dataclass
+from dataclasses import dataclass , field
 from typing import Optional, Tuple, Union
 
 @dataclass
@@ -71,11 +71,13 @@ class BioMedCLIPTextCfg:
     pad_id: int = 0
     output_tokens: bool = True  # For text features if needed
 
+
+
 @dataclass
-class BioMedCLIPCfg:
-    embed_dim: int = 512  # Joint embedding dimension
-    vision_cfg: BioMedCLIPVisionCfg = BioMedCLIPVisionCfg()
-    text_cfg: BioMedCLIPTextCfg = BioMedCLIPTextCfg()
+class CustomTextCLIP:
+    vision_cfg: BioMedCLIPVisionCfg = field(default_factory=BioMedCLIPVisionCfg)
+    text_cfg: BioMedCLIPTextCfg = field(default_factory=BioMedCLIPTextCfg)
+
     
     # Training parameters
     init_logit_scale: float = 0.07
