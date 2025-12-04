@@ -219,8 +219,8 @@ class CustomTextCLIP(nn.Module):
     def __init__(
             self,
             embed_dim: int,
-            vision_cfg: CLIPVisionCfg,
-            text_cfg: CLIPTextCfg,
+            vision_cfg: BioMedCLIPVisionCfg,
+            text_cfg: BioMedCLIPTextCfg,
             quick_gelu: bool = False,
             init_logit_scale: float = np.log(1 / 0.07),
             init_logit_bias: Optional[float] = None,
