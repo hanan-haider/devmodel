@@ -2,9 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 # =====================================================
-# 1. Strong LoRA-style Adapter (GELU + Dropout + Scaling)
+# 1. SOTA LoRA Adapter (Zero-Initialized Gating)
 # =====================================================
 class LoRAAdapter(nn.Module):
     def __init__(self, dim=768, r=64, alpha=16.0, dropout=0.1):
@@ -12,63 +11,82 @@ class LoRAAdapter(nn.Module):
         self.r = r
         self.scaling = alpha / r
 
+        # Low-rank matrices
         self.down = nn.Linear(dim, r, bias=False)
         self.up = nn.Linear(r, dim, bias=False)
         self.act = nn.GELU()
         self.dropout = nn.Dropout(dropout)
 
-        # Zero-init up → adapter starts as identity
-        nn.init.zeros_(self.up.weight)
-        nn.init.normal_(self.down.weight, std=0.02)
+        # SOTA FIX: Learnable Gate initialized to ZERO
+        # This ensures the model starts exactly as the pretrained BioMedCLIP
+        # and slowly learns to inject anomaly signals.
+        self.gate = nn.Parameter(torch.zeros(1))
+
+        # Weight Initialization
+        nn.init.zeros_(self.up.weight) # Zero-init up projection
+        nn.init.kaiming_uniform_(self.down.weight, a=math.sqrt(5))
 
     def forward(self, x):
-        residual = x
-        x = self.down(x)
-        x = self.act(x)
-        x = self.dropout(x)
-        x = self.up(x)
-        return residual + x * self.scaling
-
+        # We do NOT add residual here, we return the delta
+        # The parent class handles the residual connection
+        z = self.down(x)
+        z = self.act(z)
+        z = self.dropout(z)
+        z = self.up(z)
+        
+        # Apply scaling and the learnable gate
+        return z * self.scaling * self.gate
 
 # =====================================================
-# 2. Tip-Adapter Head (Non-parametric Few-Shot Boost)
+# 2. Tip-Adapter Head (Cache Retrieval)
 # =====================================================
 class TipAdapterHead(nn.Module):
-    def __init__(self, alpha=4.5, beta=6.8):
+    def __init__(self, beta=5.5):
         super().__init__()
-        self.alpha = alpha
         self.beta = beta
-        self.cache_keys = None  # Will be filled during training
+        self.cache_keys = None 
+        self.cache_values = None
 
-    def build_cache(self, support_features_list):
+    def build_cache(self, support_keys, support_values=None):
         """
-        support_features_list: list of tensors (N_support, D) from normal images
+        support_keys: (N_shots, Dim) - Feature vectors from normal images
+        support_values: Optional one-hot labels (not needed for pure anomaly detection)
         """
-        self.cache_keys = [f.detach().cpu() for f in support_features_list]  # list of (N, D)
-        self.register_buffer('cache_keys_norm',
-                             torch.stack([F.normalize(k, dim=-1) for k in self.cache_keys]), persistent=False)
-
-    def forward(self, query_features_list):
+        # Normalize keys for Cosine Similarity
+        self.cache_keys = F.normalize(support_keys, dim=-1).detach()
+        if support_values is not None:
+            self.cache_values = support_values.detach()
+        
+    def forward(self, query_features):
         """
-        query_features_list: list of (B, N_patch, D)
-        Returns: fused residual features (B, D)
+        query_features: (B, Dim)
         """
         if self.cache_keys is None:
-            raise RuntimeError("TipAdapter cache not built! Call build_cache() first.")
+            return query_features # Fallback if cache not built
 
-        residual = 0
-        for q, k_norm in zip(query_features_list, self.cache_keys_norm):
-            q = F.normalize(q, dim=-1)
-            affinity = q @ k_norm.T  # (B, N_patch, N_support)
-            affinity = affinity * self.beta
-            weight = F.softmax(affinity, dim=-1)
-            residual = residual + weight @ k_norm.to(q.device)  # (B, N_patch, D) → sum over layers
-
-        return residual  # (B, N_patch, D) or you can mean-pool if needed
+        # 1. Normalize Query
+        q = F.normalize(query_features, dim=-1)
+        
+        # 2. Calculate Affinity (Cosine Similarity)
+        # (B, Dim) @ (N_shots, Dim)^T -> (B, N_shots)
+        affinity = q @ self.cache_keys.T
+        
+        # 3. Sharpening
+        affinity = (-self.beta * (1 - affinity)).exp() 
+        
+        # 4. Weighted Sum (Retrieval)
+        # We retrieve the "Normal" features most similar to our query
+        retrieved_features = affinity @ self.cache_keys
+        
+        # 5. Residual Injection
+        # We add the retrieved "normal" knowledge to the query
+        # alpha can be learnable or fixed
+        alpha = 0.5 
+        return query_features + alpha * retrieved_features
 
 
 # =====================================================
-# 3. Final Unified Adapter Model (Drop-in Replacement)
+# 3. BioMedCLIP Unified Model
 # =====================================================
 class BioMedCLIP_Adapter(nn.Module):
     def __init__(self, clip_model, feature_layers=[3, 6, 9, 12], adapter_rank=64, use_tip_adapter=True):
@@ -77,10 +95,15 @@ class BioMedCLIP_Adapter(nn.Module):
         self.feature_layers = feature_layers
         self.use_tip_adapter = use_tip_adapter
 
-        # === Visual backbone ===
-        self.visual = clip_model.visual.trunk if hasattr(clip_model.visual, 'trunk') else clip_model.visual
+        # --- A. Identify Backbone Components ---
+        if hasattr(clip_model.visual, 'trunk'):
+            self.visual = clip_model.visual.trunk # Timm wrapper
+            self.is_timm = True
+        else:
+            self.visual = clip_model.visual # OpenAI
+            self.is_timm = False
 
-        # === Projection head ===
+        # --- B. Identify Projection Head (Critical for Anomaly Space) ---
         if hasattr(clip_model.visual, 'head') and hasattr(clip_model.visual.head, 'proj'):
             self.proj = clip_model.visual.head.proj
         elif hasattr(clip_model.visual, 'proj'):
@@ -88,97 +111,99 @@ class BioMedCLIP_Adapter(nn.Module):
         else:
             self.proj = None
 
-        # === Adapters ===
-        dim = 768  # BioMedCLIP ViT-B/16
+        # --- C. LoRA Adapters ---
+        dim = 768 # BioMedCLIP ViT-B
+        # We create independent adapters for Segmentation (Pixel) and Detection (Image)
         self.seg_adapters = nn.ModuleList([LoRAAdapter(dim, r=adapter_rank) for _ in feature_layers])
         self.det_adapters = nn.ModuleList([LoRAAdapter(dim, r=adapter_rank) for _ in feature_layers])
 
-        # Learnable layer fusion weights
-        self.register_parameter('seg_fusion_weights', nn.Parameter(torch.ones(len(feature_layers))))
-        self.register_parameter('det_fusion_weights', nn.Parameter(torch.ones(len(feature_layers))))
-
-        # Tip-Adapter head
+        # --- D. Tip Adapter ---
         if use_tip_adapter:
-            self.tip_adapter = TipAdapterHead(alpha=4.5, beta=6.8)
-        else:
-            self.tip_adapter = None
-
-        # Freeze backbone
+            self.tip_adapter = TipAdapterHead()
+        
+        # --- E. Freeze Backbone ---
         for p in self.visual.parameters():
             p.requires_grad = False
+        if self.proj is not None:
+            if isinstance(self.proj, nn.Parameter):
+                self.proj.requires_grad = False
+            else:
+                for p in self.proj.parameters(): p.requires_grad = False
 
-    def forward(self, x, apply_tip=False):
+    def forward(self, x):
         B = x.shape[0]
-        seg_patch_tokens = []
-        det_patch_tokens = []
-
-        # === Patch embedding + cls token + pos embed ===
-        if hasattr(self.visual, 'patch_embed'):
+        
+        # 1. Patch / Positional Embedding
+        if self.is_timm:
             x = self.visual.patch_embed(x)
             cls_token = self.visual.cls_token.expand(B, -1, -1)
             x = torch.cat((cls_token, x), dim=1)
             x = x + self.visual.pos_embed
             x = self.visual.pos_drop(x)
+            blocks = self.visual.blocks
         else:
-            # Standard OpenAI CLIP path
             x = self.visual.conv1(x)
             x = x.reshape(B, x.shape[1], -1).permute(0, 2, 1)
             cls_tokens = self.visual.class_embedding.expand(B, -1, -1)
             x = torch.cat((cls_tokens, x), dim=1)
             x = x + self.visual.positional_embedding
+            x = self.visual.ln_pre(x)
+            blocks = self.visual.transformer.resblocks
 
-        # === Transformer blocks ===
-        for idx, block in enumerate(self.visual.blocks):
+        seg_patch_tokens = []
+        det_patch_tokens = []
+
+        # 2. Pass through Blocks
+        for i, block in enumerate(blocks):
             x = block(x)
+            
+            # Inject Adapters at specific layers
+            if (i + 1) in self.feature_layers:
+                idx = self.feature_layers.index(i + 1)
+                
+                # Get Adapter Deltas (Gate is inside LoRAAdapter)
+                delta_seg = self.seg_adapters[idx](x)
+                delta_det = self.det_adapters[idx](x)
+                
+                # SOTA FIX: Pure Residual (x + delta)
+                x = x + delta_seg + delta_det
+                
+                # Store features for loss calculation
+                seg_patch_tokens.append(delta_seg[:, 1:, :]) # Skip CLS
+                det_patch_tokens.append(delta_det[:, 1:, :]) # Skip CLS
 
-            layer_id = idx + 1
-            if layer_id in self.feature_layers:
-                i = self.feature_layers.index(layer_id)
-
-                # Apply adapters
-                seg_feat = self.seg_adapters[i](x)
-                det_feat = self.det_adapters[i](x)
-
-                # Light residual update
-                x = x + 0.2 * seg_feat + 0.2 * det_feat
-
-                # Save patch tokens (exclude CLS)
-                seg_patch_tokens.append(seg_feat[:, 1:, :])
-                det_patch_tokens.append(det_feat[:, 1:, :])
-
-        # Final norm
-        if hasattr(self.visual, 'norm'):
+        # 3. Final Norm & Pool
+        if self.is_timm:
             x = self.visual.norm(x)
-
+        else:
+            x = self.visual.ln_post(x)
+            
         pooled = x[:, 0]
+        
+        # 4. Projection to Embedding Space (768 -> 512)
         if self.proj is not None:
-            pooled = self.proj(pooled)
+            if isinstance(self.proj, nn.Linear):
+                pooled = self.proj(pooled)
+            else:
+                pooled = pooled @ self.proj
 
-        # === Optional: Apply Tip-Adapter residual (only during inference or few-shot phase) ===
-        if apply_tip and self.tip_adapter is not None and self.tip_adapter.cache_keys is not None:
-            tip_residual = self.tip_adapter(seg_patch_tokens)  # (B, N, D)
-            tip_residual = tip_residual.mean(dim=1)  # Global average pool → (B, D)
-            pooled = pooled + tip_residual.to(pooled.device)
+        # 5. Apply Tip-Adapter (Image Level)
+        if self.use_tip_adapter and self.tip_adapter.cache_keys is not None:
+             pooled = self.tip_adapter(pooled)
 
         return pooled, seg_patch_tokens, det_patch_tokens
 
-    # Helper to build Tip-Adapter cache from normal support set
-    def build_tip_cache(self, support_loader, device):
-        if not self.use_tip_adapter:
-            return
-        support_feats = []
-        self.eval()
-        with torch.no_grad():
-            for img, in support_loader:
-                img = img.to(device)
-                _, seg_tokens, _ = self(img, apply_tip=False)
-                # Use fused or last layer — here we use all layers
-                fused = sum(
-                    w * t for w, t in zip(F.softmax(self.seg_fusion_weights, dim=0), seg_tokens)
-                )
-                support_feats.append(fused.mean(dim=1))  # (B, D) → collapse patches
-        # Concat all support features
-        all_support = torch.cat(support_feats, dim=0)  # (N_support, D)
-        layer_wise = [all_support for _ in self.feature_layers]  # repeat for each layer
-        self.tip_adapter.build_cache(layer_wise)
-        self.train()
+    def project_tokens(self, tokens):
+        """
+        Helper function to project patch tokens (768) to embedding space (512).
+        Crucial for calculating anomaly maps correctly.
+        """
+        if self.proj is None: 
+            return tokens
+            
+        if isinstance(self.proj, nn.Linear):
+            return self.proj(tokens)
+        else:
+            # self.proj is (768, 512) or (512, 768) depending on implementation
+            # BioMedCLIP usually expects tokens @ proj
+            return tokens @ self.proj

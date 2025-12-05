@@ -43,7 +43,9 @@ class BioMedCLIPVisionCfg:
     timm_proj_bias: bool = False
     timm_drop: float = 0.0
     timm_drop_path: Optional[float] = None
+
     output_tokens: bool = True
+    cast_dtype: Optional[str] = None
 
 @dataclass
 class BioMedCLIPTextCfg:
@@ -79,18 +81,6 @@ class BioMedCLIPCfg:
 
 print("BioMedCLIPCfg defined successfully!")
 
-"""
-@dataclass
-class BioMedCLIPCfg:
-    embed_dim: int = 512
-    vision_cfg: BioMedCLIPVisionCfg = BioMedCLIPVisionCfg()
-    text_cfg: BioMedCLIPTextCfg = BioMedCLIPTextCfg()
-
-    # Training settings (from paper)
-    temperature_init: float = 0.07
-    use_quick_gelu: bool = False        # PubMedBERT uses standard GELU
-    cast_dtype: Optional[str] = None
-"""
 
 # Or build it yourself from config (if you're not using OpenCLIP directly)
 
