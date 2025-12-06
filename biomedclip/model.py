@@ -17,9 +17,8 @@ from .timm_model import TimmModel
 from .hf_model import HFTextEncoder
 from dataclasses import dataclass , field
 from typing import Optional, Tuple, Union
-
-# QUICK FIX: Define the missing class in the current session
 from dataclasses import dataclass, field
+
 
 @dataclass
 class BioMedCLIPVisionCfg:
@@ -43,9 +42,8 @@ class BioMedCLIPVisionCfg:
     timm_proj_bias: bool = False
     timm_drop: float = 0.0
     timm_drop_path: Optional[float] = None
-
     output_tokens: bool = True
-    cast_dtype: Optional[str] = None
+    cast_dtype: Optional[str] = None  # 🆕 From BioMedCLIPCfg.cast_dtype
 
 @dataclass
 class BioMedCLIPTextCfg:
@@ -62,22 +60,18 @@ class BioMedCLIPTextCfg:
     hf_tokenizer_name: Optional[str] = "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract"
     hf_proj_type: str = 'mlp'
     hf_pooler_type: str = 'cls_last_hidden_state_pooler'
-
     hf_model_pretrained: bool = True
     pad_id: int = 0
-    output_tokens: bool = True
+    output_tokens: bool = True  # 🆕 Already present, confirmed from BioMedCLIPCfg
 
-# THIS IS THE MISSING CLASS - ADD IT!
 @dataclass
 class BioMedCLIPCfg:
     vision_cfg: BioMedCLIPVisionCfg = field(default_factory=BioMedCLIPVisionCfg)
     text_cfg: BioMedCLIPTextCfg = field(default_factory=BioMedCLIPTextCfg)
-    embed_dim: int = 512
-    init_logit_scale: float = 0.07
-    init_logit_bias: Optional[float] = None
-    cast_dtype: Optional[str] = None
-    quick_gelu: bool = False
-    output_tokens: bool = True
+    embed_dim: int = 512                    # 🛡️ Kept at root level (global)
+    init_logit_scale: float = 0.07          # 🛡️ Kept at root level (global)
+    init_logit_bias: Optional[float] = None # 🛡️ Kept at root level (global)
+    quick_gelu: bool = False                # 🛡️ Kept at root level (global)
 
 print("BioMedCLIPCfg defined successfully!")
 

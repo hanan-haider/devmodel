@@ -100,21 +100,7 @@ def create_model(
 
         print("\n here is the model config: \n", model_cfg )
 
-        # If the requested image size is different from the config
-        #if model_cfg["vision_cfg"].get("image_size") != img_size:
-        #    print(f"[INFO] Overriding BiomedCLIP image_size: {model_cfg['vision_cfg']['image_size']} → {img_size}")
 
-            # Update the config
-            #model_cfg["vision_cfg"]["image_size"] = img_size
-
-            # BiomedCLIP uses precision casting for speed & stability
-            #cast_dtype = get_cast_dtype(precision)
-
-
-
-        #if model_cfg['vision_cfg']['image_size'] != img_size:
-        #    model_cfg['vision_cfg']['image_size'] = img_size
-        #    cast_dtype = get_cast_dtype(precision)
 
         if "timm_model_name" in model_cfg["vision_cfg"]:
         #    timm models have fixed image sizes
