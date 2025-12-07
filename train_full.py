@@ -176,12 +176,11 @@ def main():
     setup_seed(args.seed)
 
 
-    # Load BiomedCLIP
-    clip_model = create_model(args.model_name, args.img_size, device, args.pretrain, require_pretrained=True)
-
-    
+    # fixed feature extractor
+    clip_model = create_model(model_name=args.model_name, img_size=args.img_size, device=device, pretrained=args.pretrain, require_pretrained=True)
     clip_model.eval()
-    model = CLIP_Inplanted(clip_model, args.features_list).to(device)
+
+    model = CLIP_Inplanted(clip_model=clip_model, features=args.features_list).to(device)
 
     for name, param in model.named_parameters():
         param.requires_grad = 'adapter' in name
