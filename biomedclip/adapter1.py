@@ -73,7 +73,7 @@ class CLIP_Inplanted(nn.Module):
 
         # Report params
         total_params = sum(p.numel() for p in self.image_encoder.parameters())
-        print(f"Total parameters in vision encoder: {total_params:,}")
+        #print(f"Total parameters in vision encoder: {total_params:,}")
 
     def forward(self, x):
         B = x.shape[0]
