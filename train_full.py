@@ -177,8 +177,8 @@ def main():
 
 
     # Load BiomedCLIP
-    clip_model = create_model(model_name=args.model_name, img_size=args.img_size, 
-                             pretrained=args.pretrain, device=device, require_pretrained=True)
+    clip_model = create_model(args.model_name, args.img_size, device, args.pretrain, require_pretrained=True)
+
     clip_model = create_model(args.model_name, args.img_size, device, args.pretrain, require_pretrained=True)
 
     clip_model.eval()
