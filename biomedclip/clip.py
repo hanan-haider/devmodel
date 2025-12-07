@@ -64,13 +64,6 @@ def get_model_config(model_name):
         return None
 
 
-
-
-
-
-
-
-
 def create_model(
         model_name: str,
         img_size: int,
