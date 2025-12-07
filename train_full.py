@@ -10,7 +10,6 @@ from tqdm import tqdm
 from dataset.full_data import MedDataset
 from biomedclip.clip import create_model
 from biomedclip.adapter import CLIP_Inplanted
-from PIL import Image
 from sklearn.metrics import roc_auc_score
 from loss import FocalLoss, BinaryDiceLoss
 from utils import cos_sim, encode_text_with_biomedclip_prompt_ensemble
@@ -33,8 +32,128 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+def build_memory_bank(model, valid_dataset, args):
+    normal_indices = [i for i, lbl in enumerate(valid_dataset.labels) if lbl == 0]
+    normal_subset = torch.utils.data.Subset(valid_dataset, normal_indices[:min(50, len(normal_indices))])
+    normal_loader = torch.utils.data.DataLoader(normal_subset, batch_size=8, shuffle=False)
+    
+    seg_features, det_features = [], []
+    model.eval()
+    
+    with torch.no_grad():
+        for batch in normal_loader:
+            images, _, _ = batch
+            images = images.to(device)
+            _, seg_tokens, det_tokens = model(images)
+            
+            seg_tokens = [F.normalize(t[:, 1:], dim=-1) for t in seg_tokens]
+            det_tokens = [F.normalize(t[:, 1:], dim=-1) for t in det_tokens]
+            
+            for b in range(images.shape[0]):
+                seg_features.append([t[b] for t in seg_tokens])
+                det_features.append([t[b] for t in det_tokens])
+    
+    n_layers = len(seg_features[0])
+    seg_mem = [torch.stack([seg_features[i][l] for i in range(len(seg_features))]).mean(0) for l in range(n_layers)]
+    det_mem = [torch.stack([det_features[i][l] for i in range(len(det_features))]).mean(0) for l in range(n_layers)]
+    
+    return seg_mem, det_mem
+
+def test(args, model, test_loader, text_features, seg_mem_features, det_mem_features):
+    gt_list, gt_mask_list = [], []
+    det_scores_zero, det_scores_few = [], []
+    seg_scores_zero, seg_scores_few = [], []
+
+    for batch in tqdm(test_loader, desc="Testing"):
+        images, masks, labels = batch
+        images = images.to(device)
+        
+        batch_labels = labels[:, 0] if labels.dim() > 1 else labels
+        batch_size = images.shape[0]
+        
+        for i in range(batch_size):
+            single_img = images[i:i+1]
+            single_lbl = batch_labels[i].item()
+            single_mask = masks[i].cpu().numpy()
+            single_mask = (single_mask > 0.5).astype(float)
+            
+            with torch.no_grad():
+                _, seg_tokens, det_tokens = model(single_img)
+                seg_tokens = [t[0, 1:] for t in seg_tokens]
+                det_tokens = [t[0, 1:] for t in det_tokens]
+
+                if CLASS_INDEX[args.obj] > 0:
+                    maps_few = []
+                    for idx, p in enumerate(seg_tokens):
+                        p = F.normalize(p, dim=-1)
+                        cos = cos_sim(seg_mem_features[idx], p.unsqueeze(0))
+                        h = int(np.sqrt(cos.shape[1]))
+                        map_few = torch.min(1 - cos, dim=0)[0].reshape(1, 1, h, h)
+                        map_few = F.interpolate(map_few, size=args.img_size, mode='bilinear')[0].cpu().numpy()
+                        maps_few.append(map_few)
+                    seg_scores_few.append(np.sum(maps_few, axis=0))
+
+                    maps_zero = []
+                    for t in seg_tokens:
+                        t = F.normalize(t, dim=-1)
+                        proj = F.normalize(t @ model.visual_proj.weight.T, dim=-1)
+                        logits = 100.0 * proj @ F.normalize(text_features, dim=-1)
+                        B, L, C = 1, logits.shape[0], 2
+                        H = int(np.sqrt(L))
+                        logits_img = logits.unsqueeze(0).permute(0, 2, 1).view(1, 2, H, H)
+                        map_zero = F.interpolate(logits_img, size=args.img_size, mode='bilinear')
+                        map_zero = torch.softmax(map_zero, dim=1)[:, 1].cpu().numpy()
+                        maps_zero.append(map_zero)
+                    seg_scores_zero.append(np.sum(maps_zero, axis=0))
+                else:
+                    maps_few = []
+                    for idx, p in enumerate(det_tokens):
+                        p = F.normalize(p, dim=-1)
+                        cos = cos_sim(det_mem_features[idx], p.unsqueeze(0))
+                        h = int(np.sqrt(cos.shape[1]))
+                        map_few = torch.min(1 - cos, dim=0)[0].reshape(1, 1, h, h)
+                        map_few = F.interpolate(map_few, size=args.img_size, mode='bilinear')[0].cpu().numpy()
+                        maps_few.append(map_few)
+                    det_scores_few.append(np.sum(maps_few, axis=0).mean())
+
+                    score_zero = 0
+                    for t in det_tokens:
+                        t = F.normalize(t, dim=-1)
+                        proj = F.normalize(t @ model.visual_proj.weight.T, dim=-1)
+                        logits = 100.0 * proj @ F.normalize(text_features, dim=-1)
+                        score_zero += torch.softmax(logits, dim=-1)[:, 1].mean()
+                    det_scores_zero.append(score_zero.cpu().item())
+
+            gt_list.append(single_lbl)
+            gt_mask_list.append(single_mask)
+
+    gt_list = np.array(gt_list)
+    gt_mask_list = np.array(gt_mask_list)
+
+    if CLASS_INDEX[args.obj] > 0:
+        seg_scores_zero = np.array(seg_scores_zero)
+        seg_scores_few = np.array(seg_scores_few)
+        seg_scores_zero = (seg_scores_zero - seg_scores_zero.min()) / (seg_scores_zero.max() - seg_scores_zero.min() + 1e-8)
+        seg_scores_few = (seg_scores_few - seg_scores_few.min()) / (seg_scores_few.max() - seg_scores_few.min() + 1e-8)
+        
+        seg_final = 0.5 * seg_scores_zero + 0.5 * seg_scores_few
+        pauc = roc_auc_score(gt_mask_list.flatten(), seg_final.flatten())
+        auc = roc_auc_score(gt_list, seg_final.reshape(len(gt_list), -1).max(1))
+        print(f'{args.obj} pAUC: {pauc:.4f}, AUC: {auc:.4f}')
+        return pauc + auc
+    else:
+        det_scores_zero = np.array(det_scores_zero)
+        det_scores_few = np.array(det_scores_few)
+        det_scores_zero = (det_scores_zero - det_scores_zero.min()) / (det_scores_zero.max() - det_scores_zero.min() + 1e-8)
+        det_scores_few = (det_scores_few - det_scores_few.min()) / (det_scores_few.max() - det_scores_few.min() + 1e-8)
+        
+        det_final = 0.5 * det_scores_zero + 0.5 * det_scores_few
+        auc = roc_auc_score(gt_list, det_final)
+        print(f'{args.obj} AUC: {auc:.4f}')
+        return auc
+
 def main():
-    parser = argparse.ArgumentParser(description='BiomedCLIP Full Data Training - SHAPE FIXED')
+    parser = argparse.ArgumentParser()
     parser.add_argument('--model_name', type=str, default='BiomedCLIP-PubMedBERT-ViT-B-16')
     parser.add_argument('--text_encoder', type=str, default='microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext')
     parser.add_argument('--pretrain', type=str, default='microsoft')
@@ -42,7 +161,7 @@ def main():
     parser.add_argument('--data_path', type=str, default='./data/')
     parser.add_argument('--batch_size', type=int, default=12)
     parser.add_argument('--save_model', type=int, default=1)
-    parser.add_argument('--save_path', type=str, default='./ckpt/full-data/')
+    parser.add_argument('--save_path', type=str, default='./ckpt/')
     parser.add_argument('--img_size', type=int, default=224)
     parser.add_argument('--epoch', type=int, default=50)
     parser.add_argument('--learning_rate', type=float, default=1e-5)
@@ -50,273 +169,105 @@ def main():
     parser.add_argument('--seed', type=int, default=111)
 
     args, _ = parser.parse_known_args()
-    
-    print("\nParsed Arguments:")
-    for arg in vars(args):
-        print(f"  {arg}: {getattr(args, arg)}")
+    print("\n=== Arguments ===")
+    for k, v in vars(args).items():
+        print(f"{k}: {v}")
     
     setup_seed(args.seed)
-    print(f"\nSeed set to: {args.seed}")
 
-    # Load BiomedCLIP
-    clip_model = create_model(model_name=args.model_name, img_size=args.img_size, 
-                            device=device, pretrained=args.pretrain, require_pretrained=True)
+    clip_model = create_model(args.model_name, args.img_size, device, args.pretrain, require_pretrained=True)
     clip_model.eval()
+    model = CLIP_Inplanted(clip_model, args.features_list).to(device)
 
-    model = CLIP_Inplanted(clip_model=clip_model, features=args.features_list).to(device)
-
-    # Enable gradients only for adapters
     for name, param in model.named_parameters():
-        if 'adapter' in name:
-            param.requires_grad = True
+        param.requires_grad = 'adapter' in name
 
-    seg_optimizer = torch.optim.Adam(model.seg_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999))
-    det_optimizer = torch.optim.Adam(model.det_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999))
+    seg_opt = torch.optim.Adam(model.seg_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999))
+    det_opt = torch.optim.Adam(model.det_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999))
 
     kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
+    train_dataset = MedDataset(args.data_path, args.obj, 'train', args.img_size)
+    train_loader = torch.utils.data.DataLoader(train_dataset, args.batch_size, True, **kwargs)
+    
+    valid_dataset = MedDataset(args.data_path, args.obj, 'valid', args.img_size)
+    valid_loader = torch.utils.data.DataLoader(valid_dataset, args.batch_size, False, **kwargs)
 
-    print("\nLoading datasets...")
-    train_dataset = MedDataset(dataset_path=args.data_path, class_name=args.obj, split='train', resize=args.img_size)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
+    loss_focal, loss_dice, loss_bce = FocalLoss(), BinaryDiceLoss(), nn.BCEWithLogitsLoss()
 
-    valid_dataset = MedDataset(dataset_path=args.data_path, class_name=args.obj, split='valid', resize=args.img_size)
-    valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
-
-    # Losses
-    loss_focal = FocalLoss()
-    loss_dice = BinaryDiceLoss()
-    loss_bce = nn.BCEWithLogitsLoss()
-
-    # Text features
-    print("\nEncoding text prompts...")
     with torch.no_grad():
         text_features = encode_text_with_biomedclip_prompt_ensemble(clip_model, REAL_NAME[args.obj], device)
 
-    best_auc = 0
     os.makedirs(args.save_path, exist_ok=True)
+    best_auc = 0
 
     for epoch in range(args.epoch):
-        print(f'\nEpoch {epoch}/{args.epoch}:')
-        
         model.train()
-        train_losses = []
+        losses = []
         
-        for batch_idx, batch in enumerate(tqdm(train_loader, desc="Train")):
+        for batch in tqdm(train_loader, desc=f"Epoch {epoch}"):
             images, masks, labels = batch
-            
             images = images.to(device)
             
-            # ✅ FIXED: Extract SCALAR image-level labels [B]
-            batch_labels = labels[:, 0, 0].to(device).float() if labels.dim() > 2 else labels.float()
-            if batch_labels.dim() > 1:
-                batch_labels = batch_labels.squeeze(-1).squeeze(-1).float()
-            
-            print(f"DEBUG - batch_labels shape: {batch_labels.shape}, values: {batch_labels[:3]}")  # DEBUG
+            # ✅✅✅ THE CRITICAL FIX - EXTRACT FIRST COLUMN ONLY ✅✅✅
+            batch_labels = labels[:, 0].to(device).float()
             
             with torch.cuda.amp.autocast():
-                _, seg_patch_tokens, det_patch_tokens = model(images)
-                
-                seg_patch_tokens = [tokens[:, 1:] for tokens in seg_patch_tokens]
-                det_patch_tokens = [tokens[:, 1:] for tokens in det_patch_tokens]
+                _, seg_tokens, det_tokens = model(images)
+                seg_tokens = [t[:, 1:] for t in seg_tokens]
+                det_tokens = [t[:, 1:] for t in det_tokens]
 
-                # DETECTION LOSS - ✅ SHAPES NOW MATCH [B] vs [B]
                 det_loss = 0
-                for layer_idx, layer_tokens in enumerate(det_patch_tokens):
-                    layer_tokens = F.normalize(layer_tokens, dim=-1)
-                    proj_tokens = F.normalize(layer_tokens @ model.visual_proj.weight.T, dim=-1)
-                    logits = 100.0 * proj_tokens @ F.normalize(text_features, dim=-1)
-                    anomaly_map = torch.softmax(logits, dim=-1)[:, :, 1]
-                    anomaly_score = anomaly_map.mean(dim=1)  # [B]
-                    
-                    print(f"DEBUG - anomaly_score shape: {anomaly_score.shape}, batch_labels shape: {batch_labels.shape}")  # DEBUG
-                    
-                    det_loss += loss_bce(anomaly_score, batch_labels)
-                
-                det_loss /= len(det_patch_tokens)
+                for t in det_tokens:
+                    t = F.normalize(t, dim=-1)
+                    proj = F.normalize(t @ model.visual_proj.weight.T, dim=-1)
+                    logits = 100.0 * proj @ F.normalize(text_features, dim=-1)
+                    score = torch.softmax(logits, dim=-1)[:, :, 1].mean(1)
+                    det_loss += loss_bce(score, batch_labels)
+                det_loss /= len(det_tokens)
 
-                # SEGMENTATION LOSS (Liver has masks)
                 seg_loss = 0
-                for b_idx in range(images.shape[0]):
-                    mask = masks[b_idx].to(device)
-                    if mask.dim() == 3:  # [1, H, W]
-                        mask = mask.squeeze(0)
-                    mask = (mask > 0.5).float()
-
-                    for layer_idx, layer_tokens in enumerate(seg_patch_tokens):
-                        tokens_b = F.normalize(layer_tokens[b_idx], dim=-1)
-                        proj_tokens = F.normalize(tokens_b @ model.visual_proj.weight.T, dim=-1)
-                        logits = 100.0 * proj_tokens @ F.normalize(text_features, dim=-1)
+                if CLASS_INDEX[args.obj] > 0:
+                    for b in range(images.shape[0]):
+                        mask = masks[b].squeeze().to(device)
+                        mask = (mask > 0.5).float()
                         
-                        B, L, C = 1, logits.shape[0], logits.shape[1]
-                        H_patch = int(math.sqrt(L))
-                        logits_img = logits.unsqueeze(0).permute(0, 2, 1).reshape(1, C, H_patch, H_patch)
-                        anomaly_map = F.interpolate(logits_img, size=args.img_size, mode='bilinear', align_corners=False)
-                        anomaly_map = torch.softmax(anomaly_map, dim=1)[:, 1, 0]  # [1, H, W]
-
-                        seg_loss += loss_focal(anomaly_map.unsqueeze(0), mask.unsqueeze(0))
-                        seg_loss += 0.5 * loss_dice(anomaly_map.unsqueeze(0), mask.unsqueeze(0))
+                        for t in seg_tokens:
+                            tb = F.normalize(t[b], dim=-1)
+                            proj = F.normalize(tb @ model.visual_proj.weight.T, dim=-1)
+                            logits = 100.0 * proj @ F.normalize(text_features, dim=-1)
+                            
+                            L, C = logits.shape
+                            H = int(np.sqrt(L))
+                            logits_img = logits.unsqueeze(0).permute(0, 2, 1).view(1, C, H, H)
+                            map_img = F.interpolate(logits_img, args.img_size, mode='bilinear')
+                            map_img = torch.softmax(map_img, dim=1)[:, 1]
+                            
+                            seg_loss += loss_focal(map_img.unsqueeze(0), mask.unsqueeze(0))
+                            seg_loss += 0.5 * loss_dice(map_img.unsqueeze(0), mask.unsqueeze(0))
+                    seg_loss /= (len(seg_tokens) * images.shape[0])
                 
-                seg_loss /= (len(seg_patch_tokens) * images.shape[0])
                 total_loss = det_loss + seg_loss
 
-                seg_optimizer.zero_grad()
-                det_optimizer.zero_grad()
-                total_loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                seg_optimizer.step()
-                det_optimizer.step()
+            seg_opt.zero_grad()
+            det_opt.zero_grad()
+            total_loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            seg_opt.step()
+            det_opt.step()
+            losses.append(total_loss.item())
 
-                train_losses.append(total_loss.item())
+        print(f"Epoch {epoch} Train Loss: {np.mean(losses):.4f}")
 
-        print(f"Epoch {epoch} Train Loss: {np.mean(train_losses):.4f}")
-
-        # Validation
-        model.eval()
-        val_auc = test(model, valid_loader, text_features)
-        print(f"Validation AUC: {val_auc:.4f}")
+        seg_mem, det_mem = build_memory_bank(model, valid_dataset, args)
+        val_auc = test(args, model, valid_loader, text_features, seg_mem, det_mem)
 
         if val_auc > best_auc:
             best_auc = val_auc
             if args.save_model:
-                torch.save({
-                    'seg_adapters': model.seg_adapters.state_dict(),
-                    'det_adapters': model.det_adapters.state_dict(),
-                }, os.path.join(args.save_path, f'{args.obj}_epoch_{epoch}_auc_{val_auc:.4f}.pth'))
-                print(f"✅ SAVED BEST: {val_auc:.4f}")
-
-
-def test(args, model, test_loader, text_features, seg_mem_features, det_mem_features):
-    gt_list = []
-    gt_mask_list = []
-
-    det_image_scores_zero = []
-    det_image_scores_few = []
-    
-    seg_score_map_zero = []
-    seg_score_map_few= []
-
-    for (image, y, mask) in tqdm(test_loader):
-        image = image.to(device)
-        mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
-
-        # Process each item in the batch separately
-        batch_size = image.shape[0]
-        
-        for i in range(batch_size):
-            single_image = image[i:i+1]  # Keep batch dimension
-            single_y = y[i]
-            single_mask = mask[i]
-
-        with torch.no_grad(), torch.cuda.amp.autocast():
-            _, seg_patch_tokens, det_patch_tokens = model(image)
-            seg_patch_tokens = [p[0, 1:, :] for p in seg_patch_tokens]
-            det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens]
-
-            if CLASS_INDEX[args.obj] > 0:
-
-                # few-shot, seg head
-                anomaly_maps_few_shot = []
-                for idx, p in enumerate(seg_patch_tokens):
-                    cos = cos_sim(seg_mem_features[idx], p)
-                    height = int(np.sqrt(cos.shape[1]))
-                    anomaly_map_few_shot = torch.min((1 - cos), 0)[0].reshape(1, 1, height, height)
-                    anomaly_map_few_shot = F.interpolate(torch.tensor(anomaly_map_few_shot),
-                                                            size=args.img_size, mode='bilinear', align_corners=True)
-                    anomaly_maps_few_shot.append(anomaly_map_few_shot[0].cpu().numpy())
-                score_map_few = np.sum(anomaly_maps_few_shot, axis=0)
-                seg_score_map_few.append(score_map_few)
-
-                # zero-shot, seg head
-                anomaly_maps = []
-                for layer in range(len(seg_patch_tokens)):
-                    seg_patch_tokens[layer] /= seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                    vision_proj = model.visual_proj  # maps 768 -> 512
-                    proj_tokens = seg_patch_tokens[layer] @ vision_proj.weight.T
-                    anomaly_map = (proj_tokens @ text_features).unsqueeze(0)
-                    #anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
-                    B, L, C = anomaly_map.shape
-                    H = int(np.sqrt(L))
-                    anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
-                                                size=args.img_size, mode='bilinear', align_corners=True)
-                    anomaly_map = torch.softmax(anomaly_map, dim=1)[:, 1, :, :]
-                    anomaly_maps.append(anomaly_map.cpu().numpy())
-                score_map_zero = np.sum(anomaly_maps, axis=0)
-                seg_score_map_zero.append(score_map_zero)
-                
-
-
-            else:
-                # few-shot, det head
-                anomaly_maps_few_shot = []
-                for idx, p in enumerate(det_patch_tokens):
-                    cos = cos_sim(det_mem_features[idx], p)
-                    height = int(np.sqrt(cos.shape[1]))
-                    anomaly_map_few_shot = torch.min((1 - cos), 0)[0].reshape(1, 1, height, height)
-                    anomaly_map_few_shot = F.interpolate(torch.tensor(anomaly_map_few_shot),
-                                                            size=args.img_size, mode='bilinear', align_corners=True)
-                    anomaly_maps_few_shot.append(anomaly_map_few_shot[0].cpu().numpy())
-                anomaly_map_few_shot = np.sum(anomaly_maps_few_shot, axis=0)
-                score_few_det = anomaly_map_few_shot.mean()
-                det_image_scores_few.append(score_few_det)
-
-                # zero-shot, det head
-                anomaly_score = 0
-                for layer in range(len(det_patch_tokens)):
-                    det_patch_tokens[layer] /= det_patch_tokens[layer].norm(dim=-1, keepdim=True)
-
-                    #projection layer 
-                    vision_proj = model.visual_proj  # maps 768 -> 512
-                    proj_tokens = det_patch_tokens[layer] @ vision_proj.weight.T
-                    anomaly_map = (proj_tokens @ text_features).unsqueeze(0)
-                    #anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)
-                    anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
-                    anomaly_score += anomaly_map.mean()
-                det_image_scores_zero.append(anomaly_score.cpu().numpy())
-
-            
-            # Append individual items
-            gt_mask_list.append(single_mask.cpu().detach().numpy())
-            gt_list.append(single_y.cpu().detach().numpy())
-            
-
-    # Rest of the function remains the same
-    gt_list = np.array(gt_list)
-    gt_mask_list = np.array(gt_mask_list)  # Now all masks have same shape
-    gt_mask_list = (gt_mask_list > 0).astype(np.int_)
-
-
-    if CLASS_INDEX[args.obj] > 0:
-
-        seg_score_map_zero = np.array(seg_score_map_zero)
-        seg_score_map_few = np.array(seg_score_map_few)
-
-        seg_score_map_zero = (seg_score_map_zero - seg_score_map_zero.min()) / (seg_score_map_zero.max() - seg_score_map_zero.min())
-        seg_score_map_few = (seg_score_map_few - seg_score_map_few.min()) / (seg_score_map_few.max() - seg_score_map_few.min())
-    
-        segment_scores = 0.5 * seg_score_map_zero + 0.5 * seg_score_map_few
-        seg_roc_auc = roc_auc_score(gt_mask_list.flatten(), segment_scores.flatten())
-        print(f'{args.obj} pAUC : {round(seg_roc_auc,4)}')
-
-        segment_scores_flatten = segment_scores.reshape(segment_scores.shape[0], -1)
-        roc_auc_im = roc_auc_score(gt_list, np.max(segment_scores_flatten, axis=1))
-        print(f'{args.obj} AUC : {round(roc_auc_im, 4)}')
-
-        return seg_roc_auc + roc_auc_im
-
-    else:
-
-        det_image_scores_zero = np.array(det_image_scores_zero)
-        det_image_scores_few = np.array(det_image_scores_few)
-
-        det_image_scores_zero = (det_image_scores_zero - det_image_scores_zero.min()) / (det_image_scores_zero.max() - det_image_scores_zero.min())
-        det_image_scores_few = (det_image_scores_few - det_image_scores_few.min()) / (det_image_scores_few.max() - det_image_scores_few.min())
-    
-        image_scores = 0.5 * det_image_scores_zero + 0.5 * det_image_scores_few
-        img_roc_auc_det = roc_auc_score(gt_list, image_scores)
-        print(f'{args.obj} AUC : {round(img_roc_auc_det,4)}')
-
-        return img_roc_auc_det
-
+                torch.save({'seg_adapters': model.seg_adapters.state_dict(),
+                           'det_adapters': model.det_adapters.state_dict()},
+                          f"{args.save_path}/{args.obj}_best.pth")
+                print(f"✅ BEST: {val_auc:.4f}")
 
 if __name__ == '__main__':
     main()
