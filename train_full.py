@@ -172,7 +172,7 @@ def main():
 
         # Validation
         model.eval()
-        val_auc = simple_validate(model, valid_loader, text_features)
+        val_auc = test(model, valid_loader, text_features)
         print(f"Validation AUC: {val_auc:.4f}")
 
         if val_auc > best_auc:
@@ -184,33 +184,139 @@ def main():
                 }, os.path.join(args.save_path, f'{args.obj}_epoch_{epoch}_auc_{val_auc:.4f}.pth'))
                 print(f"✅ SAVED BEST: {val_auc:.4f}")
 
-def simple_validate(model, val_loader, text_features):
-    scores, labels = [], []
-    model.eval()
+
+def test(args, model, test_loader, text_features, seg_mem_features, det_mem_features):
+    gt_list = []
+    gt_mask_list = []
+
+    det_image_scores_zero = []
+    det_image_scores_few = []
     
-    with torch.no_grad():
-        for batch in val_loader:
-            images, masks, lbls = batch
-            images = images.to(device)
+    seg_score_map_zero = []
+    seg_score_map_few= []
+
+    for (image, y, mask) in tqdm(test_loader):
+        image = image.to(device)
+        mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
+
+        # Process each item in the batch separately
+        batch_size = image.shape[0]
+        
+        for i in range(batch_size):
+            single_image = image[i:i+1]  # Keep batch dimension
+            single_y = y[i]
+            single_mask = mask[i]
+
+        with torch.no_grad(), torch.cuda.amp.autocast():
+            _, seg_patch_tokens, det_patch_tokens = model(image)
+            seg_patch_tokens = [p[0, 1:, :] for p in seg_patch_tokens]
+            det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens]
+
+            if CLASS_INDEX[args.obj] > 0:
+
+                # few-shot, seg head
+                anomaly_maps_few_shot = []
+                for idx, p in enumerate(seg_patch_tokens):
+                    cos = cos_sim(seg_mem_features[idx], p)
+                    height = int(np.sqrt(cos.shape[1]))
+                    anomaly_map_few_shot = torch.min((1 - cos), 0)[0].reshape(1, 1, height, height)
+                    anomaly_map_few_shot = F.interpolate(torch.tensor(anomaly_map_few_shot),
+                                                            size=args.img_size, mode='bilinear', align_corners=True)
+                    anomaly_maps_few_shot.append(anomaly_map_few_shot[0].cpu().numpy())
+                score_map_few = np.sum(anomaly_maps_few_shot, axis=0)
+                seg_score_map_few.append(score_map_few)
+
+                # zero-shot, seg head
+                anomaly_maps = []
+                for layer in range(len(seg_patch_tokens)):
+                    seg_patch_tokens[layer] /= seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                    vision_proj = model.visual_proj  # maps 768 -> 512
+                    proj_tokens = seg_patch_tokens[layer] @ vision_proj.weight.T
+                    anomaly_map = (proj_tokens @ text_features).unsqueeze(0)
+                    #anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
+                    B, L, C = anomaly_map.shape
+                    H = int(np.sqrt(L))
+                    anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
+                                                size=args.img_size, mode='bilinear', align_corners=True)
+                    anomaly_map = torch.softmax(anomaly_map, dim=1)[:, 1, :, :]
+                    anomaly_maps.append(anomaly_map.cpu().numpy())
+                score_map_zero = np.sum(anomaly_maps, axis=0)
+                seg_score_map_zero.append(score_map_zero)
+                
+
+
+            else:
+                # few-shot, det head
+                anomaly_maps_few_shot = []
+                for idx, p in enumerate(det_patch_tokens):
+                    cos = cos_sim(det_mem_features[idx], p)
+                    height = int(np.sqrt(cos.shape[1]))
+                    anomaly_map_few_shot = torch.min((1 - cos), 0)[0].reshape(1, 1, height, height)
+                    anomaly_map_few_shot = F.interpolate(torch.tensor(anomaly_map_few_shot),
+                                                            size=args.img_size, mode='bilinear', align_corners=True)
+                    anomaly_maps_few_shot.append(anomaly_map_few_shot[0].cpu().numpy())
+                anomaly_map_few_shot = np.sum(anomaly_maps_few_shot, axis=0)
+                score_few_det = anomaly_map_few_shot.mean()
+                det_image_scores_few.append(score_few_det)
+
+                # zero-shot, det head
+                anomaly_score = 0
+                for layer in range(len(det_patch_tokens)):
+                    det_patch_tokens[layer] /= det_patch_tokens[layer].norm(dim=-1, keepdim=True)
+
+                    #projection layer 
+                    vision_proj = model.visual_proj  # maps 768 -> 512
+                    proj_tokens = det_patch_tokens[layer] @ vision_proj.weight.T
+                    anomaly_map = (proj_tokens @ text_features).unsqueeze(0)
+                    #anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)
+                    anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
+                    anomaly_score += anomaly_map.mean()
+                det_image_scores_zero.append(anomaly_score.cpu().numpy())
+
             
-            batch_labels = lbls[:, 0, 0] if lbls.dim() > 2 else lbls
-            if batch_labels.dim() > 1:
-                batch_labels = batch_labels.squeeze(-1).squeeze(-1)
+            # Append individual items
+            gt_mask_list.append(single_mask.cpu().detach().numpy())
+            gt_list.append(single_y.cpu().detach().numpy())
             
-            _, _, det_patch_tokens = model(images)
-            det_patch_tokens = [F.normalize(t[:, 1:], dim=-1) for t in det_patch_tokens]
-            
-            batch_score = 0
-            for layer_tokens in det_patch_tokens:
-                proj_tokens = F.normalize(layer_tokens @ model.visual_proj.weight.T, dim=-1)
-                logits = 100.0 * proj_tokens @ F.normalize(text_features, dim=-1)
-                anomaly_score = torch.softmax(logits, dim=-1)[:, :, 1].mean(dim=1)
-                batch_score += anomaly_score
-            
-            scores.extend(batch_score.cpu().numpy())
-            labels.extend(batch_labels.cpu().numpy())
+
+    # Rest of the function remains the same
+    gt_list = np.array(gt_list)
+    gt_mask_list = np.array(gt_mask_list)  # Now all masks have same shape
+    gt_mask_list = (gt_mask_list > 0).astype(np.int_)
+
+
+    if CLASS_INDEX[args.obj] > 0:
+
+        seg_score_map_zero = np.array(seg_score_map_zero)
+        seg_score_map_few = np.array(seg_score_map_few)
+
+        seg_score_map_zero = (seg_score_map_zero - seg_score_map_zero.min()) / (seg_score_map_zero.max() - seg_score_map_zero.min())
+        seg_score_map_few = (seg_score_map_few - seg_score_map_few.min()) / (seg_score_map_few.max() - seg_score_map_few.min())
     
-    return roc_auc_score(labels, scores)
+        segment_scores = 0.5 * seg_score_map_zero + 0.5 * seg_score_map_few
+        seg_roc_auc = roc_auc_score(gt_mask_list.flatten(), segment_scores.flatten())
+        print(f'{args.obj} pAUC : {round(seg_roc_auc,4)}')
+
+        segment_scores_flatten = segment_scores.reshape(segment_scores.shape[0], -1)
+        roc_auc_im = roc_auc_score(gt_list, np.max(segment_scores_flatten, axis=1))
+        print(f'{args.obj} AUC : {round(roc_auc_im, 4)}')
+
+        return seg_roc_auc + roc_auc_im
+
+    else:
+
+        det_image_scores_zero = np.array(det_image_scores_zero)
+        det_image_scores_few = np.array(det_image_scores_few)
+
+        det_image_scores_zero = (det_image_scores_zero - det_image_scores_zero.min()) / (det_image_scores_zero.max() - det_image_scores_zero.min())
+        det_image_scores_few = (det_image_scores_few - det_image_scores_few.min()) / (det_image_scores_few.max() - det_image_scores_few.min())
+    
+        image_scores = 0.5 * det_image_scores_zero + 0.5 * det_image_scores_few
+        img_roc_auc_det = roc_auc_score(gt_list, image_scores)
+        print(f'{args.obj} AUC : {round(img_roc_auc_det,4)}')
+
+        return img_roc_auc_det
+
 
 if __name__ == '__main__':
     main()
