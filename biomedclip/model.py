@@ -102,6 +102,7 @@ def _build_vision_tower(
     act_layer = QuickGELU if quick_gelu else nn.GELU
     #print("\n Building vision tower...")
     #print("Vision config:", vision_cfg,"\n")
+    print("\nVision config for vision tower:", vision_cfg)
 
     if vision_cfg.timm_model_name:
         visual = TimmModel(
@@ -163,7 +164,7 @@ def _build_text_tower(
     if isinstance(text_cfg, dict):
         text_cfg = BioMedCLIPTextCfg(**text_cfg)
     
-    print("\nText config:", text_cfg)
+    print("\nText config for text tower:", text_cfg)
 
     if text_cfg.hf_model_name:
         text = HFTextEncoder(

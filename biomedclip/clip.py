@@ -117,7 +117,9 @@ def create_model(
             if output_dict and hasattr(model_pre, "output_dict"):
                 model_pre.output_dict = True
 
+            print("calling model inside the clip the final call")
             model = CustomTextCLIP(**model_cfg, cast_dtype=cast_dtype)
+            
             
 
 
