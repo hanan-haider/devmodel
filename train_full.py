@@ -1,6 +1,7 @@
 import os
 import argparse
 import random
+import math
 import numpy as np
 import torch
 from torch import nn
@@ -31,33 +32,7 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def extract_image_labels(labels, masks):
-    """
-    Extract scalar image-level labels from various input formats.
-    
-    Args:
-        labels: Can be [B], [B, H, W], or [B, 1]
-        masks: [B, H, W] - used as fallback
-    
-    Returns:
-        [B] tensor of scalar labels (0 or 1)
-    """
-    if labels.dim() == 3:  # [B, H, W]
-        # If any pixel is abnormal, image is abnormal
-        batch_labels = (labels.view(labels.shape[0], -1).max(dim=1)[0] > 0.5).float()
-    elif labels.dim() == 2:  # [B, C] where C could be 1 or features
-        if labels.shape[1] == 1:
-            batch_labels = labels.squeeze(1).float()
-        else:
-            # Take first column or max
-            batch_labels = labels[:, 0].float()
-    else:  # [B]
-        batch_labels = labels.float()
-    
-    return batch_labels
-
 def build_memory_bank(model, valid_dataset, args):
-    """Build memory bank from normal validation samples."""
     normal_indices = [i for i, lbl in enumerate(valid_dataset.labels) if lbl == 0]
     normal_subset = torch.utils.data.Subset(valid_dataset, normal_indices[:min(50, len(normal_indices))])
     normal_loader = torch.utils.data.DataLoader(normal_subset, batch_size=8, shuffle=False)
@@ -71,7 +46,6 @@ def build_memory_bank(model, valid_dataset, args):
             images = images.to(device)
             _, seg_tokens, det_tokens = model(images)
             
-            # Normalize and remove CLS token
             seg_tokens = [F.normalize(t[:, 1:], dim=-1) for t in seg_tokens]
             det_tokens = [F.normalize(t[:, 1:], dim=-1) for t in det_tokens]
             
@@ -79,7 +53,6 @@ def build_memory_bank(model, valid_dataset, args):
                 seg_features.append([t[b] for t in seg_tokens])
                 det_features.append([t[b] for t in det_tokens])
     
-    # Average across all normal samples per layer
     n_layers = len(seg_features[0])
     seg_mem = [torch.stack([seg_features[i][l] for i in range(len(seg_features))]).mean(0) for l in range(n_layers)]
     det_mem = [torch.stack([det_features[i][l] for i in range(len(det_features))]).mean(0) for l in range(n_layers)]
@@ -87,19 +60,15 @@ def build_memory_bank(model, valid_dataset, args):
     return seg_mem, det_mem
 
 def test(args, model, test_loader, text_features, seg_mem_features, det_mem_features):
-    """Evaluation function with proper label handling."""
     gt_list, gt_mask_list = [], []
     det_scores_zero, det_scores_few = [], []
     seg_scores_zero, seg_scores_few = [], []
 
-    model.eval()
-    
     for batch in tqdm(test_loader, desc="Testing"):
         images, masks, labels = batch
         images = images.to(device)
         
-        # ✅ Extract scalar labels properly
-        batch_labels = extract_image_labels(labels, masks)
+        batch_labels = labels[:, 0] if labels.dim() > 1 else labels
         batch_size = images.shape[0]
         
         for i in range(batch_size):
@@ -114,7 +83,6 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                 det_tokens = [t[0, 1:] for t in det_tokens]
 
                 if CLASS_INDEX[args.obj] > 0:
-                    # Segmentation task
                     maps_few = []
                     for idx, p in enumerate(seg_tokens):
                         p = F.normalize(p, dim=-1)
@@ -128,12 +96,9 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                     maps_zero = []
                     for t in seg_tokens:
                         t = F.normalize(t, dim=-1)
-                        # ✅ FIXED: Proper projection application
-                        proj = F.linear(t, model.visual_proj.weight, model.visual_proj.bias)
-                        proj = F.normalize(proj, dim=-1)
-                        logits = 100.0 * proj @ F.normalize(text_features, dim=0)
-                        
-                        L = logits.shape[0]
+                        proj = F.normalize(t @ model.visual_proj.weight.T, dim=-1)
+                        logits = 100.0 * proj @ F.normalize(text_features, dim=-1)
+                        B, L, C = 1, logits.shape[0], 2
                         H = int(np.sqrt(L))
                         logits_img = logits.unsqueeze(0).permute(0, 2, 1).view(1, 2, H, H)
                         map_zero = F.interpolate(logits_img, size=args.img_size, mode='bilinear')
@@ -141,7 +106,6 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                         maps_zero.append(map_zero)
                     seg_scores_zero.append(np.sum(maps_zero, axis=0))
                 else:
-                    # Detection task
                     maps_few = []
                     for idx, p in enumerate(det_tokens):
                         p = F.normalize(p, dim=-1)
@@ -155,10 +119,8 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                     score_zero = 0
                     for t in det_tokens:
                         t = F.normalize(t, dim=-1)
-                        # ✅ FIXED: Proper projection application
-                        proj = F.linear(t, model.visual_proj.weight, model.visual_proj.bias)
-                        proj = F.normalize(proj, dim=-1)
-                        logits = 100.0 * proj @ F.normalize(text_features, dim=0)
+                        proj = F.normalize(t @ model.visual_proj.weight.T, dim=-1)
+                        logits = 100.0 * proj @ F.normalize(text_features, dim=-1)
                         score_zero += torch.softmax(logits, dim=-1)[:, 1].mean()
                     det_scores_zero.append(score_zero.cpu().item())
 
@@ -202,7 +164,7 @@ def main():
     parser.add_argument('--save_path', type=str, default='./ckpt/')
     parser.add_argument('--img_size', type=int, default=224)
     parser.add_argument('--epoch', type=int, default=50)
-    parser.add_argument('--learning_rate', type=float, default=5e-5)
+    parser.add_argument('--learning_rate', type=float, default=1e-5)
     parser.add_argument('--features_list', type=int, nargs="+", default=[4, 8, 10, 12])
     parser.add_argument('--seed', type=int, default=111)
 
@@ -213,27 +175,19 @@ def main():
     
     setup_seed(args.seed)
 
-    # Load pretrained BioMedCLIP
-    clip_model = create_model(
-        model_name=args.model_name, 
-        img_size=args.img_size, 
-        device=device, 
-        pretrained=args.pretrain, 
-        require_pretrained=True
-    )
+
+    # fixed feature extractor
+    clip_model = create_model(model_name=args.model_name, img_size=args.img_size, device=device, pretrained=args.pretrain, require_pretrained=True)
     clip_model.eval()
 
-    # Initialize model with adapters
     model = CLIP_Inplanted(clip_model=clip_model, features=args.features_list).to(device)
 
-    # Only train adapters
     for name, param in model.named_parameters():
         param.requires_grad = 'adapter' in name
 
     seg_opt = torch.optim.Adam(model.seg_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999))
     det_opt = torch.optim.Adam(model.det_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999))
 
-    # Data loaders
     kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
     train_dataset = MedDataset(args.data_path, args.obj, 'train', args.img_size)
     train_loader = torch.utils.data.DataLoader(train_dataset, args.batch_size, True, **kwargs)
@@ -241,12 +195,8 @@ def main():
     valid_dataset = MedDataset(args.data_path, args.obj, 'valid', args.img_size)
     valid_loader = torch.utils.data.DataLoader(valid_dataset, args.batch_size, False, **kwargs)
 
-    # Losses
-    loss_focal = FocalLoss()
-    loss_dice = BinaryDiceLoss()
-    loss_bce = nn.BCEWithLogitsLoss()
+    loss_focal, loss_dice, loss_bce = FocalLoss(), BinaryDiceLoss(), nn.BCEWithLogitsLoss()
 
-    # Encode text features once
     with torch.no_grad():
         text_features = encode_text_with_biomedclip_prompt_ensemble(clip_model, REAL_NAME[args.obj], device)
 
@@ -261,27 +211,23 @@ def main():
             images, masks, labels = batch
             images = images.to(device)
             
-            # ✅✅✅ CRITICAL FIX: Extract scalar labels ✅✅✅
-            batch_labels = extract_image_labels(labels, masks).to(device)
+            # ✅✅✅ THE CRITICAL FIX - EXTRACT FIRST COLUMN ONLY ✅✅✅
+            batch_labels = labels[:, 0].to(device).float()
             
             with torch.cuda.amp.autocast():
                 _, seg_tokens, det_tokens = model(images)
-                seg_tokens = [t[:, 1:] for t in seg_tokens]  # Remove CLS token
+                seg_tokens = [t[:, 1:] for t in seg_tokens]
                 det_tokens = [t[:, 1:] for t in det_tokens]
 
-                # Detection loss
                 det_loss = 0
                 for t in det_tokens:
                     t = F.normalize(t, dim=-1)
-                    # ✅ FIXED: Use F.linear for proper projection
-                    proj = F.linear(t, model.visual_proj.weight, model.visual_proj.bias)
-                    proj = F.normalize(proj, dim=-1)
-                    logits = 100.0 * proj @ F.normalize(text_features, dim=0)
+                    proj = F.normalize(t @ model.visual_proj.weight.T, dim=-1)
+                    logits = 100.0 * proj @ F.normalize(text_features, dim=-1)
                     score = torch.softmax(logits, dim=-1)[:, :, 1].mean(1)
                     det_loss += loss_bce(score, batch_labels)
                 det_loss /= len(det_tokens)
 
-                # Segmentation loss
                 seg_loss = 0
                 if CLASS_INDEX[args.obj] > 0:
                     for b in range(images.shape[0]):
@@ -290,24 +236,21 @@ def main():
                         
                         for t in seg_tokens:
                             tb = F.normalize(t[b], dim=-1)
-                            # ✅ FIXED: Use F.linear for proper projection
-                            proj = F.linear(tb, model.visual_proj.weight, model.visual_proj.bias)
-                            proj = F.normalize(proj, dim=-1)
-                            logits = 100.0 * proj @ F.normalize(text_features, dim=0)
+                            proj = F.normalize(tb @ model.visual_proj.weight.T, dim=-1)
+                            logits = 100.0 * proj @ F.normalize(text_features, dim=-1)
                             
-                            L = logits.shape[0]
+                            L, C = logits.shape
                             H = int(np.sqrt(L))
-                            logits_img = logits.unsqueeze(0).permute(0, 2, 1).view(1, 2, H, H)
+                            logits_img = logits.unsqueeze(0).permute(0, 2, 1).view(1, C, H, H)
                             map_img = F.interpolate(logits_img, args.img_size, mode='bilinear')
-                            map_img = torch.softmax(map_img, dim=1)
+                            map_img = torch.softmax(map_img, dim=1)[:, 1]
                             
-                            seg_loss += loss_focal(map_img, mask.unsqueeze(0))
-                            seg_loss += 0.5 * loss_dice(map_img[:, 1], mask.unsqueeze(0))
+                            seg_loss += loss_focal(map_img.unsqueeze(0), mask.unsqueeze(0))
+                            seg_loss += 0.5 * loss_dice(map_img.unsqueeze(0), mask.unsqueeze(0))
                     seg_loss /= (len(seg_tokens) * images.shape[0])
                 
                 total_loss = det_loss + seg_loss
 
-            # Optimization
             seg_opt.zero_grad()
             det_opt.zero_grad()
             total_loss.backward()
@@ -318,18 +261,16 @@ def main():
 
         print(f"Epoch {epoch} Train Loss: {np.mean(losses):.4f}")
 
-        # Validation
         seg_mem, det_mem = build_memory_bank(model, valid_dataset, args)
         val_auc = test(args, model, valid_loader, text_features, seg_mem, det_mem)
 
         if val_auc > best_auc:
             best_auc = val_auc
             if args.save_model:
-                torch.save({
-                    'seg_adapters': model.seg_adapters.state_dict(),
-                    'det_adapters': model.det_adapters.state_dict()
-                }, f"{args.save_path}/{args.obj}_best.pth")
-                print(f"✅ BEST MODEL SAVED: {val_auc:.4f}")
+                torch.save({'seg_adapters': model.seg_adapters.state_dict(),
+                           'det_adapters': model.det_adapters.state_dict()},
+                          f"{args.save_path}/{args.obj}_best.pth")
+                print(f"✅ BEST: {val_auc:.4f}")
 
 if __name__ == '__main__':
     main()

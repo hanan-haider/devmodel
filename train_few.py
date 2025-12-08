@@ -19,6 +19,10 @@ from utils import augment, cos_sim, encode_text_with_biomedclip_prompt_ensemble
 from prompt import REAL_NAME
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
+
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -111,16 +115,27 @@ def main():
         param.requires_grad = True
 
     # optimizer for only adapters
-    seg_optimizer = torch.optim.Adam(list(model.seg_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
-    det_optimizer = torch.optim.Adam(list(model.det_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
+    #seg_optimizer = torch.optim.Adam(list(model.seg_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
+    #det_optimizer = torch.optim.Adam(list(model.det_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
 
+    # NEW - ADD THIS:
+    seg_optimizer = AdamW(model.seg_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
+    det_optimizer = AdamW(model.det_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
+
+    # SCHEDULER (Warmup + Cosine)
+    warmup_seg = LinearLR(seg_optimizer, start_factor=0.1, total_iters=5)
+    cosine_seg = CosineAnnealingLR(seg_optimizer, T_max=args.epoch-5, eta_min=1e-6)
+    seg_scheduler = SequentialLR(seg_optimizer, schedulers=[warmup_seg, cosine_seg], milestones=[5])
+
+    warmup_det = LinearLR(det_optimizer, start_factor=0.1, total_iters=5)
+    cosine_det = CosineAnnealingLR(det_optimizer, T_max=args.epoch-5, eta_min=1e-6)
+    det_scheduler = SequentialLR(det_optimizer, schedulers=[warmup_det, cosine_det], milestones=[5])
 
     # load test dataset
     kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
     test_dataset = MedDataset(args.data_path, args.obj, args.img_size, args.shot, args.iterate)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
-
-
+    
 
     # few-shot image augmentation
     augment_abnorm_img, augment_abnorm_mask = augment(test_dataset.fewshot_abnorm_img, test_dataset.fewshot_abnorm_mask)
@@ -221,6 +236,10 @@ def main():
                 loss_list.append(loss.item())
 
         print("Loss: ", np.mean(loss_list))
+        # ✅ ADD THESE LINES AT END OF EPOCH:
+        seg_scheduler.step()
+        det_scheduler.step()
+        print(f"  Seg LR: {seg_scheduler.get_last_lr()[0]:.8f}, Det LR: {det_scheduler.get_last_lr()[0]:.8f}")
 
 
         seg_features = []

@@ -15,7 +15,7 @@ class MedDataset(Dataset):
     def __init__(self,
                  dataset_path='/data/',
                  class_name='Brain',
-                 resize=240,
+                 resize=224,
                  shot = 4,
                  iterate = -1
                  ):
