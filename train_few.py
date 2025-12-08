@@ -118,11 +118,11 @@ def main():
     #seg_optimizer = torch.optim.Adam(list(model.seg_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
     #det_optimizer = torch.optim.Adam(list(model.det_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
 
-    # NEW - ADD THIS:
+    # ✅ NEW - ADD THIS:
     seg_optimizer = AdamW(model.seg_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
     det_optimizer = AdamW(model.det_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
 
-    # SCHEDULER (Warmup + Cosine)
+    #✅  SCHEDULER (Warmup + Cosine)
     warmup_seg = LinearLR(seg_optimizer, start_factor=0.1, total_iters=5)
     cosine_seg = CosineAnnealingLR(seg_optimizer, T_max=args.epoch-5, eta_min=1e-6)
     seg_scheduler = SequentialLR(seg_optimizer, schedulers=[warmup_seg, cosine_seg], milestones=[5])
