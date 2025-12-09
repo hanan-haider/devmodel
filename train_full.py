@@ -141,15 +141,26 @@ def main():
     print(f"Labels dtype: {labels.dtype}")
 
     valid_dataset = MedDataset(dataset_path=args.data_path, class_name=args.obj, split='valid', resize=args.img_size)
-    print("\n Validation dataset",len(valid_dataset))
-
+    
     valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
 
     print("Here only the normal images from train dataset are used for memory bank construction")
     print(len(train_dataset.images))
         # memory bank construction
-    support_dataset = torch.utils.data.TensorDataset(train_loader.dataset.images)
+    support_dataset = torch.utils.data.TensorDataset(train_loader.images)
     support_loader = torch.utils.data.DataLoader(support_dataset, batch_size=1, shuffle=True, **kwargs)
+
+
+        # losses
+    loss_focal = FocalLoss()
+    loss_dice = BinaryDiceLoss()
+    loss_bce = torch.nn.BCEWithLogitsLoss()
+
+
+        # text prompt
+    with torch.cuda.amp.autocast(), torch.no_grad():
+        text_features = encode_text_with_prompt_ensemble(clip_model, REAL_NAME[args.obj], device)
+    print("Text features shape:", text_features.shape)
    
 
 
