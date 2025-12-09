@@ -8,3 +8,5 @@ TEMPLATES = ['a cropped photo of the {}.', 'a cropped photo of a {}.', 'a close-
 
 #REAL_NAME = {'Brain': 'Brain', 'Liver':'Liver', 'Retina_RESC':'retinal OCT', 'Chest':'Chest X-ray film', 'Retina_OCT2017':'retinal OCT', 'Histopathology':'histopathological image'}
 
+
+REAL_NAME = {'Brain': 'Brain', 'Liver':'Liver', 'Retina_RESC':'Retina_RESC', 'Chest':'Chest', 'Retina_OCT2017':'Retina_OCT2017', 'Histopathology':'Histopathology'}

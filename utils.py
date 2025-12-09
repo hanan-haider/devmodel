@@ -400,7 +400,7 @@ def encode_text_with_biomedclip_prompt_ensemble1(model, obj, device):
     model.eval()
 
     # Get medical imaging term
-    imaging_term = MEDICAL_IMAGING_TERMS[args.obj]
+    imaging_term = MEDICAL_IMAGING_TERMS[obj]
 
     # Build normal prompts
     normal_prompts = [p.format(imaging_term) if '{}' in p else p
