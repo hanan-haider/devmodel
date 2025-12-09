@@ -15,7 +15,7 @@ from biomedclip.adapter import CLIP_Inplanted
 from PIL import Image
 from sklearn.metrics import roc_auc_score, precision_recall_curve, pairwise
 from loss import FocalLoss, BinaryDiceLoss
-from utils import augment, cos_sim, encode_text_with_biomedclip_prompt_ensemble1, MEDICAL_IMAGING_TERMS
+from utils import augment, cos_sim, encode_text_with_biomedclip_prompt_ensemble1
 from prompt import REAL_NAME
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -108,9 +108,6 @@ def main():
     for name, param in model.named_parameters():
         param.requires_grad = True
 
-    # optimizer for only adapters
-    #seg_optimizer = torch.optim.Adam(list(model.seg_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
-    #det_optimizer = torch.optim.Adam(list(model.det_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
 
     # ✅ NEW - ADD THIS:
     seg_optimizer = AdamW(model.seg_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
@@ -200,7 +197,7 @@ def main():
                         seg_patch_tokens[layer] = seg_patch_tokens[layer] / seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
 
                         vision_proj = model.visual_proj  # 768 -> 512
-                        #proj_tokens = seg_patch_tokens[layer] @ vision_proj.T  # now shape (196 × 512)
+                        proj_tokens = seg_patch_tokens[layer] @ vision_proj.T  # now shape (196 × 512)
                         proj_tokens = seg_patch_tokens[layer] @ vision_proj.weight.T
                         anomaly_map = (100.0 * proj_tokens @ text_features).unsqueeze(0)
                         #anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
