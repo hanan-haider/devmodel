@@ -174,42 +174,310 @@ def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
     text_features = torch.stack(text_features, dim=1).to(device)
     return text_features
 
-        
+
 """
-    # Optional: add some very direct class names (helps in few-shot/zero-shot)
-    direct_terms = [
-        f"{base_term} normal finding",
-        f"{base_term} abnormal finding",
-        f"{base_term} pathology negative",
-        f"{base_term} pathology positive",
-    ]
-    prompted_sentences.extend(direct_terms)
+Improved BioMedCLIP Prompt Ensemble for Medical Anomaly Detection
+------------------------------------------------------------------
+Based on PMC-15M training data characteristics:
+- PubMed abstracts and figure captions
+- Clinical terminology and diagnostic language
+- Concise, factual descriptions
+- Avoids overprompting and redundancy
+"""
 
-    # Tokenize all at once (much faster)
-   texts = tokenize(prompted_sentences).to(device)
-    
-    with torch.no_grad():
-        text_features = model.encode_text(texts)
-        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-    
-    # Average all features for this class (or you can max-pool, etc.)
-    text_features = text_features.mean(dim=0, keepdim=True)
-    return text_features
+# ============================================
+# PMC-ALIGNED MEDICAL TERMINOLOGY
+# ============================================
 
-    def encode_text_with_prompt_ensemble(model, obj, device):
-    prompt_normal = ['{}', 'flawless {}', 'perfect {}', 'unblemished {}', '{} without flaw', '{} without defect', '{} without damage']
-    prompt_abnormal = ['damaged {}', 'broken {}', '{} with flaw', '{} with defect', '{} with damage']
-    prompt_state = [prompt_normal, prompt_abnormal]
-    prompt_templates = ['a bad photo of a {}.', 'a low resolution photo of the {}.', 'a bad photo of the {}.', 'a cropped photo of the {}.', 'a bright photo of a {}.', 'a dark photo of the {}.', 'a photo of my {}.', 'a photo of the cool {}.', 'a close-up photo of a {}.', 'a black and white photo of the {}.', 'a bright photo of the {}.', 'a cropped photo of a {}.', 'a jpeg corrupted photo of a {}.', 'a blurry photo of the {}.', 'a photo of the {}.', 'a good photo of the {}.', 'a photo of one {}.', 'a close-up photo of the {}.', 'a photo of a {}.', 'a low resolution photo of a {}.', 'a photo of a large {}.', 'a blurry photo of a {}.', 'a jpeg corrupted photo of the {}.', 'a good photo of a {}.', 'a photo of the small {}.', 'a photo of the large {}.', 'a black and white photo of a {}.', 'a dark photo of a {}.', 'a photo of a cool {}.', 'a photo of a small {}.', 'there is a {} in the scene.', 'there is the {} in the scene.', 'this is a {} in the scene.', 'this is the {} in the scene.', 'this is one {} in the scene.']
+# Use exact medical imaging terminology from PMC captions
+MEDICAL_IMAGING_TERMS = {
+    'Brain': 'brain MRI',
+    'Liver': 'liver CT',
+    'Retina_RESC': 'retinal fundus photograph',
+    'Retina_OCT2017': 'retinal OCT',
+    'Chest': 'chest radiograph',
+    'Histopathology': 'histopathology'
+}
+
+# ============================================
+# NORMAL STATE PROMPTS (PMC-Style)
+# ============================================
+# Based on how normal findings are described in PMC captions:
+# - Short, factual statements
+# - Clinical terminology
+# - "Normal", "unremarkable", "no evidence"
+
+NORMAL_PROMPTS = [
+    # Core clinical terms (highest priority)
+    "normal {}",
+    "unremarkable {}",
+    "no abnormality",
+
+    # Negative findings (common in radiology reports)
+    "no lesion",
+    "no pathology",
+    "within normal limits",
+
+    # Healthy state descriptors
+    "healthy {}",
+    "normal appearance",
+
+    # Clinical negatives
+    "no findings",
+    "negative study",
+]
+
+# ============================================
+# ABNORMAL STATE PROMPTS (Organ-Specific, PMC-Style)
+# ============================================
+# Based on PMC figure captions for pathological findings
+# Each organ gets 8-10 HIGH-QUALITY, SPECIFIC terms
+
+ABNORMAL_PROMPTS = {
+    'Brain': [
+        # Neoplastic
+        "brain tumor",
+        "glioma",
+        "brain mass",
+        "intracranial lesion",
+
+        # Vascular/Structural
+        "stroke",
+        "hemorrhage",
+        "infarction",
+
+        # General pathology
+        "abnormal {}",
+        "brain lesion",
+        "pathological findings",
+    ],
+
+    'Liver': [
+        # Neoplastic
+        "liver tumor",
+        "hepatocellular carcinoma",
+        "liver mass",
+        "hepatic lesion",
+
+        # Diffuse disease
+        "cirrhosis",
+        "hepatic steatosis",
+        "liver fibrosis",
+
+        # General
+        "abnormal {}",
+        "liver pathology",
+        "hepatic abnormality",
+    ],
+
+    'Chest': [
+        # Infections
+        "pneumonia",
+        "pulmonary infiltrate",
+        "consolidation",
+
+        # Fluid/Structural
+        "pleural effusion",
+        "pulmonary edema",
+
+        # Masses/Nodules
+        "lung nodule",
+        "pulmonary mass",
+
+        # General
+        "abnormal {}",
+        "chest abnormality",
+        "pulmonary lesion",
+    ],
+
+    'Retina_RESC': [
+        # Diabetic retinopathy
+        "diabetic retinopathy",
+        "retinal hemorrhage",
+        "microaneurysm",
+
+        # Exudative findings
+        "hard exudate",
+        "cotton wool spot",
+
+        # Macular disease
+        "macular edema",
+        "retinal lesion",
+
+        # General
+        "abnormal {}",
+        "retinal pathology",
+        "fundus abnormality",
+    ],
+
+    'Retina_OCT2017': [
+        # AMD/CNV
+        "choroidal neovascularization",
+        "drusen",
+        "age-related macular degeneration",
+
+        # Macular disease
+        "macular edema",
+        "cystoid macular edema",
+        "diabetic macular edema",
+
+        # Structural
+        "retinal fluid",
+        "subretinal fluid",
+
+        # General
+        "abnormal {}",
+        "retinal pathology",
+    ],
+
+    'Histopathology': [
+        # Malignant
+        "carcinoma",
+        "malignancy",
+        "cancer",
+        "tumor",
+
+        # Cellular changes
+        "dysplasia",
+        "neoplasia",
+
+        # General
+        "abnormal {}",
+        "pathological tissue",
+        "histopathologic abnormality",
+    ],
+}
+
+# ============================================
+# PMC-STYLE CAPTION TEMPLATES
+# ============================================
+# Reduced from 34 to 12 high-quality, diverse templates
+# Based on actual PMC figure caption structures
+
+CAPTION_TEMPLATES = [
+    # === Direct statements (PMC most common) ===
+    "{}",  # Most common: just the finding
+    "{}.",  # With period
+
+    # === Figure/Image labels (very common in PMC) ===
+    "Image shows {}",
+    "Figure showing {}",
+
+    # === Clinical imaging reports ===
+    "Imaging demonstrates {}",
+    "{} on imaging",
+
+    # === Diagnostic language ===
+    "Findings consistent with {}",
+    "Evidence of {}",
+
+    # === Case presentation ===
+    "Patient with {}",
+    "Case of {}",
+
+    # === Radiological descriptions ===
+    "Radiograph reveals {}",
+    "Scan shows {}",
+]
+
+# ============================================
+# IMPROVED ENSEMBLE FUNCTION
+# ============================================
+
+def encode_text_with_biomedclip_prompt_ensemble1(model, obj, device):
+    """
+    Generate text embeddings using PMC-aligned prompts.
+
+    Args:
+        model: BioMedCLIP model
+        obj: Organ name (e.g., 'Liver', 'Brain')
+        device: torch device
+
+    Returns:
+        text_features: [embed_dim, 2] tensor with [normal, abnormal] embeddings
+    """
+    model.to(device)
+    model.eval()
+
+    # Get medical imaging term
+    imaging_term = MEDICAL_IMAGING_TERMS[obj]
+
+    # Build normal prompts
+    normal_prompts = [p.format(imaging_term) if '{}' in p else p
+                      for p in NORMAL_PROMPTS]
+
+    # Build abnormal prompts (organ-specific)
+    abnormal_prompts = [p.format(imaging_term) if '{}' in p else p
+                        for p in ABNORMAL_PROMPTS[obj]]
+
+    print(f"\n{'='*60}")
+    print(f"Generating embeddings for: {obj} ({imaging_term})")
+    print(f"{'='*60}")
+    print(f"Normal prompts ({len(normal_prompts)}): {normal_prompts[:3]}...")
+    print(f"Abnormal prompts ({len(abnormal_prompts)}): {abnormal_prompts[:3]}...")
+
 
     text_features = []
-    for i in range(len(prompt_state)):
-        prompted_state = [state.format(obj) for state in prompt_state[i]]
-        prompted_sentence = []
-        for s in prompted_state:
-            for template in prompt_templates:
-                prompted_sentence.append(template.format(s))
-"""
+
+    for state_name, prompt_list in [('Normal', normal_prompts),
+                                     ('Abnormal', abnormal_prompts)]:
+
+        # Generate all combinations of prompts × templates
+        all_sentences = []
+        for prompt in prompt_list:
+            for template in CAPTION_TEMPLATES:
+                sentence = template.format(prompt)
+                all_sentences.append(sentence)
+
+        print(f"\n{state_name}: {len(all_sentences)} total sentences")
+        print(f"  Examples: {all_sentences[:3]}")
+
+        # Tokenize (handle batch size limits)
+        max_batch = 256
+        all_embeddings = []
+
+        for i in range(0, len(all_sentences), max_batch):
+            batch_sentences = all_sentences[i:i+max_batch]
+            tokens = tokenizer(batch_sentences).to(device)
+
+            with torch.no_grad():
+                embeddings = model.encode_text(tokens)
+
+                # Handle tuple output (some models return (embeddings, pooled))
+                if isinstance(embeddings, tuple):
+                    embeddings = embeddings[0]
+
+                # L2 normalize individual embeddings
+                embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
+                all_embeddings.append(embeddings)
+
+        # Concatenate all batches
+        all_embeddings = torch.cat(all_embeddings, dim=0)
+
+        # Average ensemble across all prompt variations
+        class_embedding = all_embeddings.mean(dim=0)
+
+        # Final L2 normalization
+        class_embedding = class_embedding / class_embedding.norm()
+
+        text_features.append(class_embedding)
+        print(f"  Final embedding norm: {class_embedding.norm().item():.4f}")
+
+    # Stack [normal, abnormal] → shape [embed_dim, 2]
+    text_features = torch.stack(text_features, dim=1).to(device)
+
+    print(f"\n✅ Text features shape: {text_features.shape}")
+    print(f"   Normal vs Abnormal similarity: {(text_features[:, 0] @ text_features[:, 1]).item():.4f}")
+    print(f"{'='*60}\n")
+    print(text_features.shape)
+
+    return text_features
+
+import torch
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Selected device: {device}")
+
+
 
 
 
