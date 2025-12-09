@@ -146,7 +146,7 @@ def main():
     valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
 
     print("Here only the normal images from train dataset are used for memory bank construction")
-    print(len(train_dataset.dataset.images))
+    print(len(train_dataset.images))
         # memory bank construction
     support_dataset = torch.utils.data.TensorDataset(train_loader.dataset.images)
     support_loader = torch.utils.data.DataLoader(support_dataset, batch_size=1, shuffle=True, **kwargs)
