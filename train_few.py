@@ -24,20 +24,23 @@ from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
 import warnings
 warnings.filterwarnings("ignore")
 # === Add as FIRST cell in Kaggle notebook ===
-import warnings
+import os
 
-# Suppress TensorFlow CUDA warnings
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress TF logging
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Disable oneDNN custom ops
+# Set environment variables
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
-# Suppress other warnings
-warnings.filterwarnings('ignore')
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+# Write to a flag file so we know setup is done
+with open('/kaggle/working/.env_configured', 'w') as f:
+    f.write('configured')
 
-# Set Kaggle GPU optimizations
-os.environ['CUDA_LAUNCH_BLOCKING'] = '0'  # Async CUDA (faster)
+print("✅ Environment configured. Restarting kernel...")
 
-print("✅ Environment configured - warnings suppressed")
+# Restart kernel to apply settings
+import IPython
+IPython.Application.instance().kernel.do_shutdown(True)
+
 
 
 use_cuda = torch.cuda.is_available()
