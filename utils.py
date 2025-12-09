@@ -466,9 +466,9 @@ def encode_text_with_biomedclip_prompt_ensemble1(model, obj, device):
     # Stack [normal, abnormal] → shape [embed_dim, 2]
     text_features = torch.stack(text_features, dim=1).to(device)
 
-    print(f"\n✅ Text features shape: {text_features.shape}")
+"""    print(f"\n✅ Text features shape: {text_features.shape}")
     print(f"   Normal vs Abnormal similarity: {(text_features[:, 0] @ text_features[:, 1]).item():.4f}")
-    print(f"{'='*60}\n")
+    print(f"{'='*60}\n")"""
     print(text_features.shape)
 
     return text_features
