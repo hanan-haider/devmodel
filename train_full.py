@@ -183,6 +183,35 @@ def main():
         text_features = encode_text_with_biomedclip_prompt_ensemble1(clip_model, REAL_NAME[args.obj], device)
     print("Text features shape:", text_features.shape)  
 
+    best_result = 0
+
+    for epoch in range(args.epoch):
+        print(f'epoch {epoch}:')
+    
+        loss_list = []
+        # Use enumerate and break if you only want to see the shapes for the first batch
+        for batch_idx, (image, gt, label) in enumerate(train_loader):
+            image = image.to(device)
+            with torch.cuda.amp.autocast():
+                _, seg_patch_tokens, det_patch_tokens = model(image)
+            
+            # --- Add these lines to inspect the tensors ---
+            print("-" * 30)
+            print("Inspection after forward pass:")
+            
+            # View shape: e.g., torch.Size([12, 196, 768])
+            print(f"seg_patch_tokens shape: {seg_patch_tokens.shape}")
+            # View total elements (batch_size * num_patches * embedding_dim)
+            print(f"seg_patch_tokens size (total elements): {seg_patch_tokens.nelement()}")
+            
+            # View shape: e.g., torch.Size([12, 196, 768])
+            print(f"det_patch_tokens shape: {det_patch_tokens.shape}")
+            # View total elements
+            print(f"det_patch_tokens size (total elements): {det_patch_tokens.nelement()}")
+            print("-" * 30)
+            # ----------------------------------------------------
+            break
+
 
     
       
