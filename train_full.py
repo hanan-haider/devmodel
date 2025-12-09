@@ -178,12 +178,11 @@ def main():
     loss_bce = torch.nn.BCEWithLogitsLoss()
 
 
-        # text prompt
+    # text prompt
     with torch.cuda.amp.autocast(), torch.no_grad():
-        text_features = encode_text_with_prompt_ensemble(clip_model, REAL_NAME[args.obj], device)
-    print("Text features shape:", text_features.shape)
-   
-
+        text_features = encode_text_with_biomedclip_prompt_ensemble1(clip_model, REAL_NAME[args.obj], device)
+    print("Text features shape:", text_features.shape)  
+    
 
     
       
