@@ -103,6 +103,29 @@ def main():
 
     #print("here is the model", model)
 
+    # ============================================
+    # PARAMETER COUNT
+    # ============================================
+
+    def count_parameters(model):
+        """Count total and trainable parameters"""
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        frozen_params = total_params - trainable_params
+    
+        print("\n" + "="*60)
+        print("MODEL PARAMETER SUMMARY")
+        print("="*60)
+        print(f"Total parameters:      {total_params:,}")
+        print(f"Trainable parameters:  {trainable_params:,}")
+        print(f"Frozen parameters:     {frozen_params:,}")
+        print(f"Trainable percentage:  {100 * trainable_params / total_params:.2f}%")
+        print("="*60 + "\n")
+
+    # Call it
+    count_parameters(model)
+
+
     for name, param in model.named_parameters():
         param.requires_grad = True
 
@@ -138,8 +161,26 @@ def main():
         print(f"Masks batch shape: {masks.shape}")
         print(f"Labels values (first 3): {labels[:3]}")
         print(f"Labels dtype: {labels.dtype}")
+
+    valid_dataset = MedDataset(dataset_path=args.data_path, class_name=args.obj, split='valid', resize=args.img_size)
+    print("\n Validation dataset",len(valid_dataset))
+
+    valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
+
+        #  CHECK FIRST BATCH SHAPES
+    for batch in train_loader:
+        images, labels, masks = batch
+    
+        print(f"\n=== Batch Shapes ===")
+        print(f"Images batch shape: {images.shape}")
+        print(f"Labels batch shape: {labels.shape}")
+        print(f"Masks batch shape: {masks.shape}")
+        print(f"Labels values (first 3): {labels[:3]}")
+        print(f"Labels dtype: {labels.dtype}")
     
         break  # Only check first batch
+    
+      
 
 
 
