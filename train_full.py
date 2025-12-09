@@ -146,33 +146,38 @@ def main():
 
 
     best_result = 0
+    
     for epoch in range(args.epoch):
         print(f'epoch {epoch}:')
     
         loss_list = []
+        # Use enumerate and break if you only want to see the shapes for the first batch
         for batch_idx, (image, gt, label) in enumerate(train_loader):
             image = image.to(device)
             with torch.cuda.amp.autocast():
-                _, seg_patch_tokens, det_patch_tokens = model(image)
+                _, seg_patch_tokens_before, det_patch_tokens_before = model(image)
+    
+                seg_patch_tokens = [p[0, 1:, :] for p in seg_patch_tokens_before]
+                det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens_before]
+    
+            # --- Add this section to inspect the modified tensors ---
+            print("\n" + "=" * 40)
+            print(f"INSPECTION AFTER SLICING [0, 1:, :] (Epoch {epoch}, Batch {batch_idx}):")
             
-            print("-" * 30)
-            print("Inspection after forward pass:")
-            
-            # Iterate and print the shapes of tensors inside the list
-            print(f"seg_patch_tokens is a list of {len(seg_patch_tokens)} tensors.")
+            print(f"seg_patch_tokens is now a list of {len(seg_patch_tokens)} tensors.")
             for i, t in enumerate(seg_patch_tokens):
                 print(f"  seg_patch_tokens[{i}] shape: {t.shape}")
             
-            print(f"det_patch_tokens is a list of {len(det_patch_tokens)} tensors.")
+            print(f"det_patch_tokens is now a list of {len(det_patch_tokens)} tensors.")
             for i, t in enumerate(det_patch_tokens):
                 print(f"  det_patch_tokens[{i}] shape: {t.shape}")
                 
-            print("-" * 30)
-            
+            print("=" * 40)
+            # ----------------------------------------------------
+    
             # Add a break here to stop after the first batch for debugging
             break 
-    
-            # ... (rest of your training logic) ...
+
 
 
     
