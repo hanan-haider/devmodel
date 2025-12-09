@@ -94,36 +94,13 @@ def main():
     # fixed feature extractor
     clip_model = create_model(model_name=args.model_name, img_size=args.img_size, device=device, pretrained=args.pretrain, require_pretrained=True )
     
-    #print(clip_model)
+   
     clip_model.eval()
     
 
 
     model = CLIP_Inplanted(clip_model=clip_model, features=args.features_list).to(device)
-
-    #print("here is the model", model)
-
-    # ============================================
-    # PARAMETER COUNT
-    # ============================================
-
-    def count_parameters(model):
-        """Count total and trainable parameters"""
-        total_params = sum(p.numel() for p in model.parameters())
-        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        frozen_params = total_params - trainable_params
-    
-        print("\n" + "="*60)
-        print("MODEL PARAMETER SUMMARY")
-        print("="*60)
-        print(f"Total parameters:      {total_params:,}")
-        print(f"Trainable parameters:  {trainable_params:,}")
-        print(f"Frozen parameters:     {frozen_params:,}")
-        print(f"Trainable percentage:  {100 * trainable_params / total_params:.2f}%")
-        print("="*60 + "\n")
-
-    # Call it
-    count_parameters(model)
+  
 
 
     for name, param in model.named_parameters():
@@ -152,33 +129,30 @@ def main():
     #train_dataset = MedDataset(args.data_path, args.obj, args.img_size, args.shot, args.iterate)
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
     # ✅ CHECK FIRST BATCH SHAPES
-    for batch in train_loader:
-        images, labels, masks = batch
-    
-        print(f"\n=== Batch Shapes ===")
-        print(f"Images batch shape: {images.shape}")
-        print(f"Labels batch shape: {labels.shape}")
-        print(f"Masks batch shape: {masks.shape}")
-        print(f"Labels values (first 3): {labels[:3]}")
-        print(f"Labels dtype: {labels.dtype}")
+    # Get the first batch directly
+    first_batch = next(iter(train_loader))
+    images, labels, masks = first_batch
+
+    print(f"\n=== Batch Shapes ===")
+    print(f"Images batch shape: {images.shape}")
+    print(f"Labels batch shape: {labels.shape}")
+    print(f"Masks batch shape: {masks.shape}")
+    print(f"Labels values (first 3): {labels[:3]}")
+    print(f"Labels dtype: {labels.dtype}")
 
     valid_dataset = MedDataset(dataset_path=args.data_path, class_name=args.obj, split='valid', resize=args.img_size)
     print("\n Validation dataset",len(valid_dataset))
 
     valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
 
-        #  CHECK FIRST BATCH SHAPES
-    for batch in valid_loader:
-        images, labels, masks = batch
-    
-        print(f"\n=== Batch Shapes ===")
-        print(f"Images batch shape: {images.shape}")
-        print(f"Labels batch shape: {labels.shape}")
-        print(f"Masks batch shape: {masks.shape}")
-        print(f"Labels values (first 3): {labels[:3]}")
-        print(f"Labels dtype: {labels.dtype}")
-    
-        break  # Only check first batch
+    print("Here only the normal images from train dataset are used for memory bank construction")
+    print(len(train_dataset.dataset.images))
+        # memory bank construction
+    support_dataset = torch.utils.data.TensorDataset(train_loader.dataset.images)
+    support_loader = torch.utils.data.DataLoader(support_dataset, batch_size=1, shuffle=True, **kwargs)
+   
+
+
     
       
 
