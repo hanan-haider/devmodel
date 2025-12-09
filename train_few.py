@@ -17,14 +17,28 @@ from sklearn.metrics import roc_auc_score, precision_recall_curve, pairwise
 from loss import FocalLoss, BinaryDiceLoss
 from utils import augment, cos_sim, encode_text_with_biomedclip_prompt_ensemble1
 from prompt import REAL_NAME
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
 
 
 import warnings
 warnings.filterwarnings("ignore")
+# === Add as FIRST cell in Kaggle notebook ===
+import warnings
+
+# Suppress TensorFlow CUDA warnings
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress TF logging
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Disable oneDNN custom ops
+
+# Suppress other warnings
+warnings.filterwarnings('ignore')
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+# Set Kaggle GPU optimizations
+os.environ['CUDA_LAUNCH_BLOCKING'] = '0'  # Async CUDA (faster)
+
+print("✅ Environment configured - warnings suppressed")
+
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
@@ -49,8 +63,8 @@ def main():
     # General defaults
     parser.add_argument('--model_name', type=str, default='BiomedCLIP-PubMedBERT-ViT-B-16',
                         help="BiomedCLIP model version")    
-    parser.add_argument('--text_encoder', type=str, default='microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract',
-                        help="Text encoder used for BiomedCLIP" )
+    #parser.add_argument('--text_encoder', type=str, default='microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract',
+    #                    help="Text encoder used for BiomedCLIP" )
 
     parser.add_argument('--pretrain', type=str, default='microsoft',
                             help="pretrained checkpoint source")
