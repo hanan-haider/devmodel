@@ -48,8 +48,8 @@ def main():
     # General defaults
     parser.add_argument('--model_name', type=str, default='BiomedCLIP-PubMedBERT-ViT-B-16',
                         help="BiomedCLIP model version")    
-    parser.add_argument('--text_encoder', type=str, default='microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract',
-                        help="Text encoder used for BiomedCLIP" )
+    #parser.add_argument('--text_encoder', type=str, default='microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract',
+    #                    help="Text encoder used for BiomedCLIP" )
 
     parser.add_argument('--pretrain', type=str, default='microsoft',
                             help="pretrained checkpoint source")
@@ -89,3 +89,61 @@ def main():
   #for printing at the outset of training
 
     setup_seed(args.seed)
+
+    
+    # fixed feature extractor
+    clip_model = create_model(model_name=args.model_name, img_size=args.img_size, device=device, pretrained=args.pretrain, require_pretrained=True )
+    
+    #print(clip_model)
+    clip_model.eval()
+    
+
+
+    model = CLIP_Inplanted(clip_model=clip_model, features=args.features_list).to(device)
+
+    #print("here is the model", model)
+
+    for name, param in model.named_parameters():
+        param.requires_grad = True
+
+
+    # ✅ NEW - ADD THIS:
+    seg_optimizer = AdamW(model.seg_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
+    det_optimizer = AdamW(model.det_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
+
+    #✅  SCHEDULER (Warmup + Cosine)
+    warmup_seg = LinearLR(seg_optimizer, start_factor=0.1, total_iters=5)
+    cosine_seg = CosineAnnealingLR(seg_optimizer, T_max=args.epoch-5, eta_min=1e-6)
+    seg_scheduler = SequentialLR(seg_optimizer, schedulers=[warmup_seg, cosine_seg], milestones=[5])
+
+    warmup_det = LinearLR(det_optimizer, start_factor=0.1, total_iters=5)
+    cosine_det = CosineAnnealingLR(det_optimizer, T_max=args.epoch-5, eta_min=1e-6)
+    det_scheduler = SequentialLR(det_optimizer, schedulers=[warmup_det, cosine_det], milestones=[5])
+
+        # load test dataset
+    kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
+        # Similarly for train and valid
+    train_dataset = MedDataset(dataset_path=args.data_path, class_name=args.obj, split='train', resize=args.img_size)
+    print("\n Training dataset",len(train_dataset))
+
+    #train_dataset = MedDataset(args.data_path, args.obj, args.img_size, args.shot, args.iterate)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
+    # ✅ CHECK FIRST BATCH SHAPES
+    for batch in train_loader:
+        images, labels, masks = batch
+    
+        print(f"\n=== Batch Shapes ===")
+        print(f"Images batch shape: {images.shape}")
+        print(f"Labels batch shape: {labels.shape}")
+        print(f"Masks batch shape: {masks.shape}")
+        print(f"Labels values (first 3): {labels[:3]}")
+        print(f"Labels dtype: {labels.dtype}")
+    
+        break  # Only check first batch
+
+
+
+
+
+
+
