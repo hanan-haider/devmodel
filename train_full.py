@@ -70,8 +70,8 @@ def main():
     parser.add_argument("--features_list", type=int, nargs="+", default=[3, 6, 9, 12],
                         help="layer features used for adapters")    
     parser.add_argument('--seed', type=int, default=111)
-    parser.add_argument('--shot', type=int, default=4)
-    parser.add_argument('--iterate', type=int, default=0)
+    #parser.add_argument('--shot', type=int, default=4)
+    #parser.add_argument('--iterate', type=int, default=0)
 
     #args = parser.parse_args()
 #printing the arguments 
