@@ -14,7 +14,7 @@ from biomedclip.clip import create_model
 from biomedclip.adapter import CLIP_Inplanted
 from sklearn.metrics import roc_auc_score
 from loss import FocalLoss, BinaryDiceLoss
-from utils import cos_sim, encode_text_with_biomedclip_prompt_ensemble
+from utils import cos_sim, encode_text_with_biomedclip_prompt_ensemble1
 from prompt import REAL_NAME
 
 
@@ -182,7 +182,7 @@ def main():
     with torch.cuda.amp.autocast(), torch.no_grad():
         text_features = encode_text_with_biomedclip_prompt_ensemble1(clip_model, REAL_NAME[args.obj], device)
     print("Text features shape:", text_features.shape)  
-    
+
 
     
       
