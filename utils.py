@@ -438,7 +438,7 @@ def encode_text_with_biomedclip_prompt_ensemble1(model, obj, device):
 
         for i in range(0, len(all_sentences), max_batch):
             batch_sentences = all_sentences[i:i+max_batch]
-            tokens = tokenizer(batch_sentences).to(device)
+            tokens = tokenize(batch_sentences).to(device)
 
             with torch.no_grad():
                 embeddings = model.encode_text(tokens)
