@@ -77,9 +77,19 @@ class MedDataset(Dataset):
             img_dir = os.path.join(self.dataset_path, 'train', 'good')
             img_paths = sorted([os.path.join(img_dir, f) for f in os.listdir(img_dir)
                                 if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
+
             images.extend(img_paths)
             labels.extend([0] * len(img_paths))
             masks.extend([None] * len(img_paths))
+
+        print("First 5 images paths found in train/good:")
+        for p in img_paths[:5]:
+            print(p)
+        num_to_print = 5
+
+        print(f"\nDisplaying the first {num_to_print} labels and masks added:")
+        for i, (label, mask) in enumerate(zip(labels[:num_to_print], masks[:num_to_print])):
+            print(f"Index {i}: Label = {label}, Mask Status = {'Present' if mask is not None else 'None'}")
 
         else:  # valid or test
             # Load normal (good)

@@ -165,10 +165,10 @@ def main():
     valid_dataset = MedDataset(dataset_path=args.data_path, class_name=args.obj, split='valid', resize=args.img_size)
     print("\n Validation dataset",len(valid_dataset))
 
-    valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
+    valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
 
         #  CHECK FIRST BATCH SHAPES
-    for batch in train_loader:
+    for batch in valid_loader:
         images, labels, masks = batch
     
         print(f"\n=== Batch Shapes ===")
