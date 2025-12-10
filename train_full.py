@@ -9,7 +9,7 @@ from torch import nn
 from torch.nn import functional as F
 from tqdm import tqdm
 from dataset.full_data import MedDataset
-from biomedclip.clip import create_model
+from biomedclip.clip import create_model ,_MODEL_CKPT_PATHS
 from biomedclip.adapter import CLIP_Inplanted
 from sklearn.metrics import roc_auc_score
 from loss import FocalLoss, BinaryDiceLoss
@@ -69,7 +69,7 @@ def main():
     print("LOADING BIOMEDCLIP MODEL AND VISION PROJECTION")
     print("="*70)
     
-    clip_model, vision_proj = create_model(
+    clip_model = create_model(
         model_name=args.model_name, 
         img_size=args.img_size, 
         device=device, 
@@ -80,11 +80,6 @@ def main():
     
     clip_model.eval()
     
-    print("\n✅ Both model and vision projection loaded successfully!")
-    print(f"   Vision proj shape: {vision_proj.weight.shape}")
-    print(f"   Vision proj device: {vision_proj.weight.device}")
-    print(f"   Vision proj dtype: {vision_proj.weight.dtype}")
-    print("="*70 + "\n")
 
     # ✅ Create adapter model
     model = CLIP_Inplanted(clip_model=clip_model, features=args.features_list).to(device)
@@ -124,12 +119,28 @@ def main():
     loss_dice = BinaryDiceLoss()
     loss_bce = torch.nn.BCEWithLogitsLoss()
 
+
     # ✅ Text features (pre-computed)
     with torch.cuda.amp.autocast(), torch.no_grad():
         text_features = encode_text_with_biomedclip_prompt_ensemble1(
             clip_model, REAL_NAME[args.obj], device
         )
     print("Text features shape:", text_features.shape)
+
+    # Load vision projection from checkpoint
+    checkpoint_path = _MODEL_CKPT_PATHS[model_name]
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    
+    # Create projection layer
+    vision_proj = nn.Linear(768, 512, bias=False).to(device)
+    vision_proj.weight.data = checkpoint['visual.head.proj.weight'].to(device)
+    vision_proj.eval()
+    
+    # Freeze (optional but recommended)
+    for param in vision_proj.parameters():
+        param.requires_grad = False
+    
+    print(f"✅ Vision projection loaded: {vision_proj.weight.shape}")
 
     best_result = 0
 
