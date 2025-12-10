@@ -120,15 +120,9 @@ def main():
     loss_bce = torch.nn.BCEWithLogitsLoss()
 
 
-    # ✅ Text features (pre-computed)
-    with torch.cuda.amp.autocast(), torch.no_grad():
-        text_features = encode_text_with_biomedclip_prompt_ensemble1(
-            clip_model, REAL_NAME[args.obj], device
-        )
-    print("Text features shape:", text_features.shape)
 
     # Load vision projection from checkpoint
-    checkpoint_path = _MODEL_CKPT_PATHS[model_name]
+    checkpoint_path = _MODEL_CKPT_PATHS[args.model_name]
     checkpoint = torch.load(checkpoint_path, map_location=device)
     
     # Create projection layer
@@ -141,6 +135,15 @@ def main():
         param.requires_grad = False
     
     print(f"✅ Vision projection loaded: {vision_proj.weight.shape}")
+
+    # ✅ Text features (pre-computed)
+    with torch.cuda.amp.autocast(), torch.no_grad():
+        text_features = encode_text_with_biomedclip_prompt_ensemble1(
+            clip_model, REAL_NAME[args.obj], device
+        )
+    print("Text features shape:", text_features.shape)
+
+
 
     best_result = 0
 
