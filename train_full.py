@@ -153,7 +153,7 @@ def main():
         model.train()
         loss_list = []
         
-        for (image, label, gt) in enumerate(train_loader):
+        for (image, label, gt) in train_loader:
             image = image.to(device)
             
             with torch.cuda.amp.autocast():
