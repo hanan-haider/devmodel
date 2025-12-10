@@ -19,6 +19,14 @@ from utils import augment, cos_sim, encode_text_with_biomedclip_prompt_ensemble1
 from prompt import REAL_NAME
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
+# Add at the very top of your main script (before any imports)
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress TensorFlow warnings
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 
 
@@ -151,7 +159,7 @@ def main():
 
 
     # text prompt
-    with torch.cuda.amp.autocast(), torch.no_grad():
+    with torch.amp.autocast('cuda'), torch.no_grad():
         text_features = encode_text_with_biomedclip_prompt_ensemble1(clip_model, REAL_NAME[args.obj], device)
 
     best_result = 0
@@ -162,7 +170,7 @@ def main():
         loss_list = []
         for (image, gt, label) in train_loader:
             image = image.to(device)
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast('cuda'):
                 _, seg_patch_tokens, det_patch_tokens = model(image)
                 seg_patch_tokens = [p[0, 1:, :] for p in seg_patch_tokens]
                 det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens]
@@ -278,7 +286,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
             single_y = y[i]
             single_mask = mask[i]
 
-        with torch.no_grad(), torch.cuda.amp.autocast():
+        with torch.no_grad(), torch.amp.autocast('cuda'):
             _, seg_patch_tokens, det_patch_tokens = model(image)
             seg_patch_tokens = [p[0, 1:, :] for p in seg_patch_tokens]
             det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens]
