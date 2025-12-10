@@ -262,11 +262,13 @@ def main():
         print("Loss: ", np.mean(loss_list))
 
 
-
         # ✅ ADD THESE LINES AT END OF EPOCH:
         seg_scheduler.step()
         det_scheduler.step()
-                seg_features = []
+
+
+        
+        seg_features = []
         det_features = []
         for image in support_loader:
             image = image[0].to(device)
