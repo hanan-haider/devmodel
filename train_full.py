@@ -153,7 +153,7 @@ def main():
         model.train()
         loss_list = []
         
-        for (image, label, gt) in train_loader:
+        for (image, label, gt) in tqdm(train_loader):
             image = image.to(device)
             
             with torch.cuda.amp.autocast():
@@ -164,9 +164,11 @@ def main():
 
                 # ✅ Detection loss with vision projection
                 det_loss = 0
+            
                 image_label = label.to(device).float()
                 
                 for layer in range(len(det_patch_tokens)):
+                    print(f"Processing detection layer {layer}...")
                     raw_tokens=det_patch_tokens[layer]  #[196,768]
                     #print(f"  Raw tokens shape: {raw_tokens.shape}")
 
@@ -195,8 +197,22 @@ def main():
                     mask = gt.squeeze(0).to(device)
                     mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
                     for layer in range(len(seg_patch_tokens)):
-                        seg_patch_tokens[layer] = seg_patch_tokens[layer] / seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                        anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
+                        raw_tokens = seg_patch_tokens[layer]  # [196, 768]
+
+                                            # ✅ CRITICAL: Project from 768 to 512 dimensions
+                        with torch.no_grad():  # Don't backprop through frozen projection
+                            projected_tokens = vision_proj(raw_tokens)  # [196, 768] -> [196, 512]
+
+                        projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
+                        #print(f"  After normalization, mean norm: {projected_tokens.norm(dim=-1).mean():.4f}")
+
+                        # ✅ NOW dimensions match: [196, 512] @ [512, 2] = [196, 2]
+                        anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0) 
+
+                        print("in segmentation loop:")
+                        print(f"  Anomaly map shape (pre-softmax): {anomaly_map.shape}")  # [1, 196, 2]
+
+                        
                         B, L, C = anomaly_map.shape
                         H = int(np.sqrt(L))
                         anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
