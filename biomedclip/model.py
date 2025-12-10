@@ -27,6 +27,7 @@ class BioMedCLIPVisionCfg:
     width: int = 768
     patch_size: int = 16
     heads: int = 12
+    embed_dim: int = 512                    
     mlp_ratio: float = 4.0
     ls_init_value: Optional[float] = None
     patch_dropout: float = 0.0

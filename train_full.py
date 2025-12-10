@@ -163,7 +163,7 @@ def main():
         print('epoch ', epoch, ':')
 
         loss_list = []
-        for (image, gt, label) in train_loader:
+        for (image, label, gt ) in train_loader:
             image = image.to(device)
             with torch.cuda.amp.autocast():
                 _, seg_patch_tokens, det_patch_tokens = model(image)
