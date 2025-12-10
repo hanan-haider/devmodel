@@ -21,26 +21,6 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
 
 
-import warnings
-warnings.filterwarnings("ignore")
-# === Add as FIRST cell in Kaggle notebook ===
-import os
-
-# Set environment variables
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-os.environ['TOKENIZERS_PARALLELISM'] = 'false'
-
-# Write to a flag file so we know setup is done
-with open('/kaggle/working/.env_configured', 'w') as f:
-    f.write('configured')
-
-print("✅ Environment configured. Restarting kernel...")
-
-# Restart kernel to apply settings
-import IPython
-IPython.Application.instance().kernel.do_shutdown(True)
-
 
 
 use_cuda = torch.cuda.is_available()
