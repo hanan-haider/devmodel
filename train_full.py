@@ -145,39 +145,59 @@ def main():
     valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
 
 
+        # losses
+    loss_focal = FocalLoss()
+    loss_dice = BinaryDiceLoss()
+    loss_bce = torch.nn.BCEWithLogitsLoss()
+
+
+    # text prompt
+    with torch.cuda.amp.autocast(), torch.no_grad():
+        text_features = encode_text_with_biomedclip_prompt_ensemble1(clip_model, REAL_NAME[args.obj], device)
+    print("Text features shape:", text_features.shape)  
+
     best_result = 0
-    
+
+
     for epoch in range(args.epoch):
-        print(f'epoch {epoch}:')
-    
+        print('epoch ', epoch, ':')
+
         loss_list = []
-        # Use enumerate and break if you only want to see the shapes for the first batch
-        for batch_idx, (image, gt, label) in enumerate(train_loader):
+        for (image, gt, label) in train_loader:
             image = image.to(device)
             with torch.cuda.amp.autocast():
-                _, seg_patch_tokens_before, det_patch_tokens_before = model(image)
-    
-                seg_patch_tokens = [p[0, 1:, :] for p in seg_patch_tokens_before]
-                det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens_before]
-    
-            # --- Add this section to inspect the modified tensors ---
-            print("\n" + "=" * 40)
-            print(f"INSPECTION AFTER SLICING [0, 1:, :] (Epoch {epoch}, Batch {batch_idx}):")
-            
-            print(f"seg_patch_tokens is now a list of {len(seg_patch_tokens)} tensors.")
-            for i, t in enumerate(seg_patch_tokens):
-                print(f"  seg_patch_tokens[{i}] shape: {t.shape}")
-            
-            print(f"det_patch_tokens is now a list of {len(det_patch_tokens)} tensors.")
-            for i, t in enumerate(det_patch_tokens):
-                print(f"  det_patch_tokens[{i}] shape: {t.shape}")
-                
-            print("=" * 40)
-            # ----------------------------------------------------
-    
-            # Add a break here to stop after the first batch for debugging
-            break 
-
+                _, seg_patch_tokens, det_patch_tokens = model(image)
+                seg_patch_tokens = [p[0, 1:, :] for p in seg_patch_tokens]
+                det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens]
+                    
+                 # det loss
+                det_loss = 0
+                image_label = label.to(device)
+                print("\n--- Detection Loss Calculation Start ---")
+                print(f"Initial image_label (ground truth): {image_label.shape}, values: {image_label}")
+                for layer in range(len(det_patch_tokens)):
+                    # Normalize tokens
+                    det_patch_tokens[layer] = det_patch_tokens[layer] / det_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                    print(f"\nLayer {layer} tokens shape after normalization: {det_patch_tokens[layer].shape}")
+                    # Calculate cosine similarity with text features
+                    # Note: Assuming 'text_features' is defined and on the correct device
+                    anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)
+                    print(f"Anomaly map shape after unsqueeze(0) (pre-softmax): {anomaly_map.shape}")
+                    # Apply softmax and select the 'abnormal' probability channel (index 1)
+                    anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
+                    print(f"Anomaly map shape after softmax/selection: {anomaly_map.shape}")
+                    # Calculate the image-level anomaly score (mean across patches)
+                    anomaly_score = torch.mean(anomaly_map, dim=-1)
+                    print(f"Anomaly score shape (image-level prediction): {anomaly_score.shape}")
+                    print(f"Anomaly score values: {anomaly_score}")
+                    # Calculate the loss using Binary Cross-Entropy
+                    # Note: Assuming 'loss_bce' is defined (e.g., nn.BCEWithLogitsLoss or nn.BCELoss)
+                    loss = loss_bce(anomaly_score, image_label)
+                    det_loss += loss
+                    print(f"Loss for Layer {layer}: {loss.item()}")
+                print(f"\nTotal det_loss for the batch: {det_loss.item()}")
+                print("--- Detection Loss Calculation End ---")
+        
 
 
     
