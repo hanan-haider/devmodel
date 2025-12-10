@@ -187,28 +187,46 @@ def main():
                     print(f"  Anomaly score: {anomaly_score.item():.4f}")
                     det_loss += loss_bce(anomaly_score, image_label)
 
+
                 # Segmentation loss (add your code here)
-                seg_loss = 0
-                # ... your segmentation loss code ...
+                if CLASS_INDEX[args.obj] > 0:
+                    # pixel level
+                    seg_loss = 0
+                    mask = gt.squeeze(0).to(device)
+                    mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
+                    for layer in range(len(seg_patch_tokens)):
+                        seg_patch_tokens[layer] = seg_patch_tokens[layer] / seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                        anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
+                        B, L, C = anomaly_map.shape
+                        H = int(np.sqrt(L))
+                        anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
+                                                    size=args.img_size, mode='bilinear', align_corners=True)
+                        anomaly_map = torch.softmax(anomaly_map, dim=1)
+                        seg_loss += loss_focal(anomaly_map, mask)
+                        seg_loss += loss_dice(anomaly_map[:, 1, :, :], mask)
 
-                # Total loss
-                loss = det_loss + seg_loss
-                
-            # Backward pass
-            seg_optimizer.zero_grad()
-            det_optimizer.zero_grad()
-            loss.backward()
-            seg_optimizer.step()
-            det_optimizer.step()
-            
-            loss_list.append(loss.item())
+                    loss = seg_loss + det_loss
+                    loss.requires_grad_(True)
+                    seg_optimizer.zero_grad()
+                    det_optimizer.zero_grad()
+                    loss.backward()
+                    seg_optimizer.step()
+                    det_optimizer.step()
 
-        # Update schedulers
+                else:
+                    loss = det_loss
+                    loss.requires_grad_(True)
+                    det_optimizer.zero_grad()
+                    loss.backward()
+                    det_optimizer.step()
+
+                loss_list.append(loss.item())
+
+        print("Loss: ", np.mean(loss_list))
+        # ✅ ADD THESE LINES AT END OF EPOCH:
         seg_scheduler.step()
         det_scheduler.step()
         
-        avg_loss = np.mean(loss_list)
-        print(f'Average Loss: {avg_loss:.4f}')
 
 
 if __name__ == '__main__':
