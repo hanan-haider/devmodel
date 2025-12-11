@@ -182,12 +182,26 @@ def main():
 
     best_result = 0
 
+    seg_features = []
+    det_features = []
+    for image in support_loader:
+        image = image[0].to(device)
+        with torch.no_grad():
+            _, seg_patch_tokens, det_patch_tokens = model(image)
+            seg_patch_tokens = [p[0].contiguous() for p in seg_patch_tokens]
+            det_patch_tokens = [p[0].contiguous() for p in det_patch_tokens]
+            seg_features.append(seg_patch_tokens)
+            det_features.append(det_patch_tokens)
+    seg_mem_features = [torch.cat([seg_features[j][i] for j in range(len(seg_features))], dim=0) for i in range(len(seg_features[0]))]
+    det_mem_features = [torch.cat([det_features[j][i] for j in range(len(det_features))], dim=0) for i in range(len(det_features[0]))]
+    
+
 
 
              
 
        
-        result = test(args, model, test_loader, text_features, seg_mem_features, det_mem_features)
+    result = test(args, model, test_loader, text_features, seg_mem_features, det_mem_features)
      
 
 def test(args, model, valid_loader, text_features, vision_proj, seg_mem_features, det_mem_features):

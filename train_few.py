@@ -177,35 +177,53 @@ def main():
                     
                 # det loss
                 det_loss = 0
-                image_label = label.to(device)
+                image_label = label.to(device).float()
+                
                 for layer in range(len(det_patch_tokens)):
-                    det_patch_tokens[layer] = det_patch_tokens[layer] / det_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                    vision_proj = model.visual_proj  # 768 -> 512
+        
+                    raw_tokens=det_patch_tokens[layer]  #[196,768]
+                    #print(f"  Raw tokens shape: {raw_tokens.shape}")
 
-                 
+                    # ✅ CRITICAL: Project from 768 to 512 dimensions
+                    with torch.no_grad():  # Don't backprop through frozen projection
+                        projected_tokens = vision_proj(raw_tokens)  # [196, 768] -> [196, 512]
+                    projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
+                    #print(f"  After normalization, mean norm: {projected_tokens.norm(dim=-1).mean():.4f}")
 
-           
-                    proj_tokens = det_patch_tokens[layer] @ vision_proj.weight.T  # now shape (196 × 512)
-                    anomaly_map = (100.0 * proj_tokens @ text_features).unsqueeze(0)
+                    # ✅ NOW dimensions match: [196, 512] @ [512, 2] = [196, 2]
+                    anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0) 
+                    #print(f"  Anomaly map shape (pre-softmax): {anomaly_map.shape}")  # [1, 196, 2]
 
-                    #anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)    
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
+                    #print(f"  Anomaly map shape (post-softmax): {anomaly_map.shape}")  # [1, 196]
+
                     anomaly_score = torch.mean(anomaly_map, dim=-1)
+                    #print(f"  Anomaly score: {anomaly_score.item():.4f}")
                     det_loss += loss_bce(anomaly_score, image_label)
 
+
+                # Segmentation loss (add your code here)
                 if CLASS_INDEX[args.obj] > 0:
                     # pixel level
                     seg_loss = 0
                     mask = gt.squeeze(0).to(device)
                     mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
                     for layer in range(len(seg_patch_tokens)):
-                        seg_patch_tokens[layer] = seg_patch_tokens[layer] / seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                        raw_tokens = seg_patch_tokens[layer]  # [196, 768]
 
-                        vision_proj = model.visual_proj  # 768 -> 512
-                        proj_tokens = seg_patch_tokens[layer] @ vision_proj.T  # now shape (196 × 512)
-                        proj_tokens = seg_patch_tokens[layer] @ vision_proj.weight.T
-                        anomaly_map = (100.0 * proj_tokens @ text_features).unsqueeze(0)
-                        #anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
+                                            # ✅ CRITICAL: Project from 768 to 512 dimensions
+                        with torch.no_grad():  # Don't backprop through frozen projection
+                            projected_tokens = vision_proj(raw_tokens)  # [196, 768] -> [196, 512]
+
+                        projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
+                        #print(f"  After normalization, mean norm: {projected_tokens.norm(dim=-1).mean():.4f}")
+
+                        # ✅ NOW dimensions match: [196, 512] @ [512, 2] = [196, 2]
+                        anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0) 
+
+            
+
+                        
                         B, L, C = anomaly_map.shape
                         H = int(np.sqrt(L))
                         anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
