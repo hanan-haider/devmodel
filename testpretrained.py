@@ -11,7 +11,6 @@ from scipy.ndimage import gaussian_filter  # if you use it elsewhere
 
 from dataset.medical_few import MedDataset
 from biomedclip.tokenizer import tokenize  # if used elsewhere
-from biomedclip.adapter_pretrained import CLIP_Inplanted  # we will redefine below if needed
 from PIL import Image
 from sklearn.metrics import roc_auc_score, precision_recall_curve, pairwise
 from loss import FocalLoss, BinaryDiceLoss
@@ -113,7 +112,7 @@ class CLIP_Inplanted(nn.Module):
         seg_patch_tokens = []
         det_patch_tokens = []
 
-        # simple scheme: apply adapters on same tokens multiple times
+        # apply adapters on same tokens multiple times
         for i in range(len(self.features)):
             seg_mid, seg_out = self.seg_adapters[i](tokens)
             det_mid, det_out = self.det_adapters[i](tokens)
@@ -346,10 +345,11 @@ def main():
     global device
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-    model = CLIP_Inplanted(clip_model, args.features_list)
-    print("Model class:", type(model))
-    model.to(device)
-    model.eval()
+    # wrapped vision model
+    wrapped_model = CLIP_Inplanted(clip_model, args.features_list)
+    print("Wrapped model class:", type(wrapped_model))
+    wrapped_model.to(device)
+    wrapped_model.eval()
 
     # dataset
     kwargs = {"num_workers": 4, "pin_memory": True} if use_cuda else {}
@@ -398,21 +398,21 @@ def main():
     loss_dice = BinaryDiceLoss()
     loss_bce = torch.nn.BCEWithLogitsLoss()
 
-    # text prompt embeddings
+    # text prompt embeddings: use ORIGINAL clip_model (has encode_text)
     with torch.amp.autocast("cuda"), torch.no_grad():
         text_features = encode_text_with_biomedclip_prompt_ensemble1(
-            model, REAL_NAME[args.obj], device
+            clip_model, REAL_NAME[args.obj], device
         )
 
     print(text_features.shape)
 
-    # build memory bank
+    # build memory bank using wrapped_model
     seg_features = []
     det_features = []
     for image in support_loader:
         image = image[0].to(device)
         with torch.no_grad():
-            _, seg_patch_tokens, det_patch_tokens = model(image)
+            _, seg_patch_tokens, det_patch_tokens = wrapped_model(image)
             seg_patch_tokens = [p[0].contiguous() for p in seg_patch_tokens]
             det_patch_tokens = [p[0].contiguous() for p in det_patch_tokens]
             seg_features.append(seg_patch_tokens)
@@ -427,7 +427,7 @@ def main():
         for i in range(len(det_features[0]))
     ]
 
-    result = test(args, model, test_loader, text_features, seg_mem_features, det_mem_features)
+    result = test(args, wrapped_model, test_loader, text_features, seg_mem_features, det_mem_features)
     print("Final metric:", result)
 
 
