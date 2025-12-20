@@ -31,6 +31,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 
 
+
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
 
@@ -107,11 +108,13 @@ def main():
     
     
     # 1. Setup Model and Tokenizer
-    model, preprocess = create_model_from_pretrained('hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224')
+    clip_model, preprocess = create_model_from_pretrained('hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224')
     tokenizer = get_tokenizer('hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224')
     
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    model=CLIP_Inplanted(clip_model, args.features_list)
     model.to(device)
+
     model.eval()
     
     
