@@ -288,17 +288,13 @@ def main():
         "--model_name",
         type=str,
         default="BiomedCLIP-PubMedBERT-ViT-B-16",
-        help="BiomedCLIP model version",
     )
-    parser.add_argument(
-        "--pretrain", type=str, default="microsoft", help="pretrained checkpoint source"
-    )
+    parser.add_argument("--pretrain", type=str, default="microsoft")
     parser.add_argument("--obj", type=str, default="Liver")
     parser.add_argument(
         "--data_path",
         type=str,
         default="./data/",
-        help="path to dataset",
     )
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--save_model", type=int, default=1)
@@ -307,7 +303,6 @@ def main():
         "--img_size",
         type=int,
         default=224,
-        help="BiomedCLIP trained with 224x224 resolution",
     )
     parser.add_argument("--epoch", type=int, default=50)
     parser.add_argument("--learning_rate", type=float, default=0.001)
@@ -316,7 +311,6 @@ def main():
         type=int,
         nargs="+",
         default=[3, 6, 9, 12],
-        help="layer features used for adapters",
     )
     parser.add_argument("--seed", type=int, default=111)
     parser.add_argument("--shot", type=int, default=4)
@@ -427,7 +421,9 @@ def main():
         for i in range(len(det_features[0]))
     ]
 
-    result = test(args, wrapped_model, test_loader, text_features, seg_mem_features, det_mem_features)
+    result = test(
+        args, wrapped_model, test_loader, text_features, seg_mem_features, det_mem_features
+    )
     print("Final metric:", result)
 
 
