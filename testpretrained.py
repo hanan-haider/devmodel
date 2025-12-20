@@ -12,6 +12,7 @@ from dataset.medical_few import MedDataset
 from biomedclip.clip import create_model
 from biomedclip.tokenizer import tokenize
 from biomedclip.adapter_pretrained import CLIP_Inplanted
+print("CLIP_Inplanted from:", CLIP_Inplanted.__module__, CLIP_Inplanted)
 from PIL import Image
 from sklearn.metrics import roc_auc_score, precision_recall_curve, pairwise
 from loss import FocalLoss, BinaryDiceLoss
@@ -28,6 +29,8 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+model = CLIP_Inplanted(clip_model, args.features_list)
+print("Model class:", type(model))
 
 
 
