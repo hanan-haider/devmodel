@@ -170,6 +170,15 @@ def main():
 
     best_result = 0
 
+    # --- ADD THIS BEFORE THE TRAINING LOOP ---
+    # Log variances for uncertainty weighting
+    log_var_seg = torch.zeros(1, requires_grad=True, device=device)
+    log_var_det = torch.zeros(1, requires_grad=True, device=device)
+
+    # Add these parameters to your optimizers so they are updated during training
+    seg_optimizer.add_param_group({'params': [log_var_seg]})
+    det_optimizer.add_param_group({'params': [log_var_det]})
+
     for epoch in range(args.epoch):
         print('epoch ', epoch, ':')
 
@@ -192,7 +201,8 @@ def main():
                     #anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0) 
                     anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0)   
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
-                    anomaly_score = torch.mean(anomaly_map, dim=-1)
+                    #anomaly_score = torch.mean(anomaly_map, dim=-1)
+                    anomaly_score = torch.amax(anomaly_map, dim=-1)
                     det_loss += loss_bce(anomaly_score, image_label)
 
                 if CLASS_INDEX[args.obj] > 0:
@@ -214,8 +224,12 @@ def main():
                         anomaly_map = torch.softmax(anomaly_map, dim=1)
                         seg_loss += loss_focal(anomaly_map, mask)
                         seg_loss += loss_dice(anomaly_map[:, 1, :, :], mask)
+
+                    weighted_seg_loss = torch.exp(-log_var_seg) * seg_loss + log_var_seg
+                    weighted_det_loss = torch.exp(-log_var_det) * det_loss + log_var_det
                     
-                    loss = seg_loss + det_loss
+                    loss = weighted_seg_loss + weighted_det_loss
+                    #loss = seg_loss + det_loss
                     loss.requires_grad_(True)
                     seg_optimizer.zero_grad()
                     det_optimizer.zero_grad()
@@ -380,15 +394,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
         print(f'{args.obj} pAUC : {round(seg_roc_auc,4)}')
 
         segment_scores_flatten = segment_scores.reshape(segment_scores.shape[0], -1)
-        # top-k mean, k ~ top 1–5% of pixels
-        k = max(1, int(0.02 * segment_scores_flatten.shape[1]))
-        topk_vals, _ = torch.topk(
-            torch.from_numpy(segment_scores_flatten), k, dim=1
-        )
-        image_scores = topk_vals.mean(dim=1).numpy()
-
-        roc_auc_im = roc_auc_score(gt_list, image_scores)
-        #roc_auc_im = roc_auc_score(gt_list, np.max(segment_scores_flatten, axis=1))
+        roc_auc_im = roc_auc_score(gt_list, np.max(segment_scores_flatten, axis=1))
         print(f'{args.obj} AUC : {round(roc_auc_im, 4)}')
 
         return seg_roc_auc + roc_auc_im

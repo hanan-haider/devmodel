@@ -410,11 +410,11 @@ def encode_text_with_biomedclip_prompt_ensemble1(model, obj, device):
     abnormal_prompts = [p.format(imaging_term) if '{}' in p else p
                         for p in ABNORMAL_PROMPTS[obj]]
 
-    print(f"\n{'='*60}")
-    print(f"Generating embeddings for: {obj} ({imaging_term})")
-    print(f"{'='*60}")
-    print(f"Normal prompts ({len(normal_prompts)}): {normal_prompts[:3]}...")
-    print(f"Abnormal prompts ({len(abnormal_prompts)}): {abnormal_prompts[:3]}...")
+    #print(f"\n{'='*60}")
+    #print(f"Generating embeddings for: {obj} ({imaging_term})")
+    #print(f"{'='*60}")
+    #print(f"Normal prompts ({len(normal_prompts)}): {normal_prompts[:3]}...")
+    #print(f"Abnormal prompts ({len(abnormal_prompts)}): {abnormal_prompts[:3]}...")
 
 
     text_features = []
@@ -429,8 +429,8 @@ def encode_text_with_biomedclip_prompt_ensemble1(model, obj, device):
                 sentence = template.format(prompt)
                 all_sentences.append(sentence)
 
-        print(f"\n{state_name}: {len(all_sentences)} total sentences")
-        print(f"  Examples: {all_sentences[:3]}")
+        #print(f"\n{state_name}: {len(all_sentences)} total sentences")
+        #print(f"  Examples: {all_sentences[:3]}")
 
         # Tokenize (handle batch size limits)
         max_batch = 256
@@ -461,7 +461,7 @@ def encode_text_with_biomedclip_prompt_ensemble1(model, obj, device):
         class_embedding = class_embedding / class_embedding.norm()
 
         text_features.append(class_embedding)
-        print(f"  Final embedding norm: {class_embedding.norm().item():.4f}")
+        #print(f"  Final embedding norm: {class_embedding.norm().item():.4f}")
 
     # Stack [normal, abnormal] → shape [embed_dim, 2]
     text_features = torch.stack(text_features, dim=1).to(device)
