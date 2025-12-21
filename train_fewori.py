@@ -323,8 +323,12 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                     # zero-shot, det head
                     anomaly_score = 0
                     for layer in range(len(det_patch_tokens)):
-                        det_patch_tokens[layer] /= det_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                        anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)
+                        raw_tokens = det_patch_tokens[layer]
+                        projected_tokens = model.visual_proj(raw_tokens)
+                        projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
+                        anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0)
+                        #det_patch_tokens[layer] /= det_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                        #anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)
                         anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
                         anomaly_score += anomaly_map.mean()
                     det_image_scores_zero.append(anomaly_score.cpu().numpy())
