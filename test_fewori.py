@@ -101,9 +101,20 @@ def main():
     for name, param in model.named_parameters():
         param.requires_grad = True
 
-    # optimizer for only adapters
-    seg_optimizer = torch.optim.Adam(list(model.seg_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
-    det_optimizer = torch.optim.Adam(list(model.det_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
+
+
+    # NEW - ADD THIS:
+    seg_optimizer = AdamW(model.seg_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
+    det_optimizer = AdamW(model.det_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
+
+    # SCHEDULER (Warmup + Cosine)
+    warmup_seg = LinearLR(seg_optimizer, start_factor=0.1, total_iters=5)
+    cosine_seg = CosineAnnealingLR(seg_optimizer, T_max=args.epoch-5, eta_min=1e-6)
+    seg_scheduler = SequentialLR(seg_optimizer, schedulers=[warmup_seg, cosine_seg], milestones=[5])
+
+    warmup_det = LinearLR(det_optimizer, start_factor=0.1, total_iters=5)
+    cosine_det = CosineAnnealingLR(det_optimizer, T_max=args.epoch-5, eta_min=1e-6)
+    det_scheduler = SequentialLR(det_optimizer, schedulers=[warmup_det, cosine_det], milestones=[5])
 
 
 
@@ -273,9 +284,6 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
         print(f'{args.obj} AUC : {round(img_roc_auc_det,4)}')
 
         return img_roc_auc_det
-
-
-
 
 
 if __name__ == '__main__':
