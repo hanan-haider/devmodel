@@ -9,7 +9,7 @@ from torch.nn import functional as F
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter
 from dataset.medical_few import MedDataset
-from biomedclip.clip import create_model
+from biomedclip.clip import create_model , _MODEL_CKPT_PATHS
 from biomedclip.tokenizer import tokenize
 from biomedclip.adapter import CLIP_Inplanted
 from PIL import Image
@@ -156,6 +156,22 @@ def main():
     loss_focal = FocalLoss()
     loss_dice = BinaryDiceLoss()
     loss_bce = torch.nn.BCEWithLogitsLoss()
+
+
+    # Load vision projection from checkpoint
+    checkpoint_path = _MODEL_CKPT_PATHS[args.model_name]
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    
+    # Create projection layer
+    vision_proj = nn.Linear(768, 512, bias=False).to(device)
+    vision_proj.weight.data = checkpoint['visual.head.proj.weight'].to(device)
+    vision_proj.eval()
+    
+    # Freeze (optional but recommended)
+    for param in vision_proj.parameters():
+        param.requires_grad = False
+    
+    print(f"✅ Vision projection loaded: {vision_proj.weight.shape}")
 
 
     # text prompt

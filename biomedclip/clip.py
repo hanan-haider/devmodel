@@ -89,7 +89,7 @@ def create_model(
         logging.info(f'Loading pretrained {model_name} .')
         model_cfg = model_cfg or get_model_config(model_name)
 
-        print("\n here is the model config: \n", model_cfg )
+        #print("\n here is the model config: \n", model_cfg )
 
 
 
@@ -115,7 +115,7 @@ def create_model(
             if output_dict and hasattr(model_pre, "output_dict"):
                 model_pre.output_dict = True
 
-            print("calling model inside the clip the final call")
+            #print("calling model inside the clip the final call")
             model = CustomTextCLIP(**model_cfg, cast_dtype=cast_dtype)
             
             
