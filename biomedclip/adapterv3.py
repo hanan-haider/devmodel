@@ -140,8 +140,8 @@ class CLIP_Inplanted(nn.Module):
                 )
 
                 # store patch tokens (without CLS) for downstream seg/det heads
-                seg_patch_tokens.append(seg_med[:, 1:, :])
-                det_patch_tokens.append(det_med[:, 1:, :])
+                seg_patch_tokens.append(seg_med)
+                det_patch_tokens.append(det_med)
 
         # ----- ViT output head -----
         x = self.image_encoder.norm(x)
