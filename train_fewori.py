@@ -380,7 +380,15 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
         print(f'{args.obj} pAUC : {round(seg_roc_auc,4)}')
 
         segment_scores_flatten = segment_scores.reshape(segment_scores.shape[0], -1)
-        roc_auc_im = roc_auc_score(gt_list, np.max(segment_scores_flatten, axis=1))
+        # top-k mean, k ~ top 1–5% of pixels
+        k = max(1, int(0.02 * segment_scores_flatten.shape[1]))
+        topk_vals, _ = torch.topk(
+            torch.from_numpy(segment_scores_flatten), k, dim=1
+        )
+        image_scores = topk_vals.mean(dim=1).numpy()
+
+        roc_auc_im = roc_auc_score(gt_list, image_scores)
+        #roc_auc_im = roc_auc_score(gt_list, np.max(segment_scores_flatten, axis=1))
         print(f'{args.obj} AUC : {round(roc_auc_im, 4)}')
 
         return seg_roc_auc + roc_auc_im
