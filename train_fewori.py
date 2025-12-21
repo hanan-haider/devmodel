@@ -195,8 +195,12 @@ def main():
                     mask = gt.squeeze(0).to(device)
                     mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
                     for layer in range(len(seg_patch_tokens)):
-                        seg_patch_tokens[layer] = seg_patch_tokens[layer] / seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                        anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
+                        raw_tokens = seg_patch_tokens[layer]
+                        projected_tokens = model.visual_proj(raw_tokens)
+                        projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
+                        #seg_patch_tokens[layer] = seg_patch_tokens[layer] / seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                        #anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
+                        anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0)
                         B, L, C = anomaly_map.shape
                         H = int(np.sqrt(L))
                         anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
@@ -223,6 +227,10 @@ def main():
                 loss_list.append(loss.item())
 
         print("Loss: ", np.mean(loss_list))
+        # ✅ ADD THESE LINES AT END OF EPOCH:
+        seg_scheduler.step()
+        det_scheduler.step()
+        print(f"  Seg LR: {seg_scheduler.get_last_lr()[0]:.8f}, Det LR: {det_scheduler.get_last_lr()[0]:.8f}")
 
 
         seg_features = []
