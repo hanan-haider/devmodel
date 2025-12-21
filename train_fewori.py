@@ -227,7 +227,7 @@ def main():
                 loss_list.append(loss.item())
 
         print("Loss: ", np.mean(loss_list))
-        # ✅ ADD THESE LINES AT END OF EPOCH:
+        # ADD THESE LINES AT END OF EPOCH:
         seg_scheduler.step()
         det_scheduler.step()
         print(f"  Seg LR: {seg_scheduler.get_last_lr()[0]:.8f}, Det LR: {det_scheduler.get_last_lr()[0]:.8f}")
