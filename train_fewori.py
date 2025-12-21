@@ -179,8 +179,12 @@ def main():
                 det_loss = 0
                 image_label = label.to(device)
                 for layer in range(len(det_patch_tokens)):
-                    det_patch_tokens[layer] = det_patch_tokens[layer] / det_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                    anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)    
+                    raw_tokens = det_patch_tokens[layer]
+                    projected_tokens = model.visual_proj(raw_tokens)
+                    projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
+                    #det_patch_tokens[layer] = det_patch_tokens[layer] / det_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                    #anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0) 
+                    anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0)   
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
                     anomaly_score = torch.mean(anomaly_map, dim=-1)
                     det_loss += loss_bce(anomaly_score, image_label)
