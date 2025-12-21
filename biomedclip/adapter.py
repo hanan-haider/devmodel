@@ -1,192 +1,109 @@
-import os
-import argparse
-import random
-import math
-import numpy as np
 import torch
 from torch import nn
-from torch.nn import functional as F
-from PIL import Image
+import math
 
-
-# Residual CLIP Adapter
+# 1. Improved Residual CLIP Adapter with Gating and LayerNorm
 class ClipAdapter(nn.Module):
-    def __init__(self, c_in, bottleneck=768):
+    def __init__(self, c_in, bottleneck=512):
         super(ClipAdapter, self).__init__()
-        self.fc1 = nn.Sequential(
+        # LayerNorm helps stabilize training in deep transformers
+        self.ln = nn.LayerNorm(c_in)
+        
+        self.fc = nn.Sequential(
             nn.Linear(c_in, bottleneck, bias=False),
-            nn.LeakyReLU(inplace=False)
-        )
-        self.fc2 = nn.Sequential(
+            nn.GELU(), # GELU is standard for Transformers/BioMedCLIP
             nn.Linear(bottleneck, c_in, bias=False),
-            nn.LeakyReLU(inplace=False)
+            nn.Dropout(0.1)
         )
+        
+        # Learnable scale parameter: starts at 0 so the model begins 
+        # with pure pre-trained weights and slowly incorporates adapter info
+        self.scale = nn.Parameter(torch.zeros(1))
 
     def forward(self, x):
-        x = self.fc1(x)
-        y = self.fc2(x)
-        return x, y
-
+        # x shape: [Batch, Tokens, Dim]
+        residual = x
+        x = self.ln(x)
+        x = self.fc(x)
         
+        # Intermediate 'med' features for the memory bank/patch tokens
+        # We return the normalized transformed features
+        adapt_med = x 
+        
+        # Output with learnable residual scaling
+        adapt_out = residual + self.scale * x
+        
+        return adapt_med, adapt_out
+
+# 2. Re-implemented CLIP_Inplanted for BioMedCLIP (ViT-B/16)
 class CLIP_Inplanted(nn.Module):
     def __init__(self, clip_model, features):
         super().__init__()
         self.clipmodel = clip_model
         
-        # BioMedCLIP uses TimmModel wrapper around VisionTransformer
-        # Access: clip_model.visual.trunk (the actual ViT)
+        # Access the Timm-based Vision Transformer trunk
         self.image_encoder = clip_model.visual.trunk
-        #print("Using BioMedCLIP visual encoder:", self.image_encoder)
-
-
-        self.image_encoder = clip_model.visual.trunk
-        #print("Using BioMedCLIP visual encoder:", self.image_encoder)
         
-        # BioMedCLIP uses visual.head.proj instead of visual.proj
+        # BioMedCLIP uses visual.head.proj to map 768 -> 512
         if hasattr(clip_model.visual, 'head') and hasattr(clip_model.visual.head, 'proj'):
-            self.visual_proj = clip_model.visual.head.proj  # Final projection layer
+            self.visual_proj = clip_model.visual.head.proj
         else:
-            # Fallback: check if it's directly accessible
             self.visual_proj = getattr(clip_model.visual, 'proj', None)
         
-        self.features = features 
+        self.features = features # Layers to inject adapters into, e.g., [4, 8, 10, 12]
         
         # BioMedCLIP ViT-B has 768 hidden dimensions
-        self.seg_adapters = nn.ModuleList([ClipAdapter(768, bottleneck=768) for i in range(len(features))])
-        self.det_adapters = nn.ModuleList([ClipAdapter(768, bottleneck=768) for i in range(len(features))])
+        # Using separate adapters for Segmentation (local) and Detection (patch)
+        self.seg_adapters = nn.ModuleList([
+            ClipAdapter(768, bottleneck=384) for _ in range(len(features))
+        ])
+        self.det_adapters = nn.ModuleList([
+            ClipAdapter(768, bottleneck=384) for _ in range(len(features))
+        ])
 
     def forward(self, x):
-        # BioMedCLIP uses timm's ViT which has a different forward structure
         B = x.shape[0]
         
-        # Patch embedding
+        # --- Standard ViT Entry ---
         x = self.image_encoder.patch_embed(x)
-        
-        # Add cls token
         cls_token = self.image_encoder.cls_token.expand(B, -1, -1)
         x = torch.cat((cls_token, x), dim=1)
-        
-        # Add positional embedding
         x = x + self.image_encoder.pos_embed
         x = self.image_encoder.pos_drop(x)
         
-        # Store attention maps and adapter outputs
-        attn_out = []
         seg_patch_tokens = []
         det_patch_tokens = []
         
-        # Process through transformer blocks
-        # BioMedCLIP ViT-B has 12 blocks (layers)
+        # --- Transformer Blocks with Adapter Injection ---
         for i, block in enumerate(self.image_encoder.blocks):
+            # 1. Forward through the frozen ViT block
             x = block(x)
             
-            # Extract attention at layer 12 (index 11)
-            if i + 1 == 12:
-                attn_out.append(x)  # Store the output instead
-            
-            # Apply adapters at specified feature layers
+            # 2. Check if this layer is selected for adaptation
             if (i + 1) in self.features:
-                seg_adapt_med, seg_adapt_out = self.seg_adapters[self.features.index(i+1)](x)
-                det_adapt_med, det_adapt_out = self.det_adapters[self.features.index(i+1)](x)
+                idx = self.features.index(i + 1)
                 
-                # Residual connection with adapters
-                x = 0.8 * x + 0.1 * seg_adapt_out + 0.1 * det_adapt_out
+                # Apply Segmentation Adapter
+                seg_med, x_seg = self.seg_adapters[idx](x)
+                # Apply Detection Adapter
+                det_med, x_det = self.det_adapters[idx](x)
                 
-                seg_patch_tokens.append(seg_adapt_med)
-                det_patch_tokens.append(det_adapt_med)
+                # Dynamic blending: use the mean of adapter outputs
+                # This replaces the hardcoded 0.8/0.1/0.1 with gated learnable logic
+                x = (x_seg + x_det) / 2.0
+                
+                # Store the patch tokens (excluding CLS token at index 0)
+                seg_patch_tokens.append(seg_med[:, 1:, :]) 
+                det_patch_tokens.append(det_med[:, 1:, :])
         
-        # Apply final layer norm
+        # --- Standard ViT Exit ---
         x = self.image_encoder.norm(x)
         
-        # Global pooling (extract cls token)
-        pooled = x[:, 0]  # CLS token
-        
-        # Apply visual projection if it exists
-        if self.visual_proj is not None:
-            pooled = self.visual_proj(pooled)
-        
-        return pooled, seg_patch_tokens, det_patch_tokens
-
-
-# Alternative version that handles different BioMedCLIP architectures
-class CLIP_Inplanted_BioMed(nn.Module):
-    def __init__(self, clip_model, features):
-        super().__init__()
-        self.clipmodel = clip_model
-        
-        # Handle different BioMedCLIP visual encoder structures
-        if hasattr(clip_model.visual, 'trunk'):
-            # BioMedCLIP with TimmModel wrapper
-            self.image_encoder = clip_model.visual.trunk
-        else:
-            # Standard CLIP structure
-            self.image_encoder = clip_model.visual
-        
-        # Handle different projection layer locations
-        self.visual_proj = None
-        if hasattr(clip_model.visual, 'head') and hasattr(clip_model.visual.head, 'proj'):
-            self.visual_proj = clip_model.visual.head.proj
-        elif hasattr(clip_model.visual, 'proj'):
-            self.visual_proj = clip_model.visual.proj
-        
-        self.features = features
-        
-        # BioMedCLIP ViT-B has 768 hidden dimensions
-        self.seg_adapters = nn.ModuleList([ClipAdapter(768, bottleneck=768) for i in range(len(features))])
-        self.det_adapters = nn.ModuleList([ClipAdapter(768, bottleneck=768) for i in range(len(features))])
-
-    def forward(self, x):
-        B = x.shape[0]
-        
-        # Handle different forward passes based on architecture
-        if hasattr(self.image_encoder, 'patch_embed'):
-            # Timm ViT forward pass
-            x = self.image_encoder.patch_embed(x)
-            
-            # Add cls token
-            cls_token = self.image_encoder.cls_token.expand(B, -1, -1)
-            x = torch.cat((cls_token, x), dim=1)
-            
-            # Add positional embedding
-            x = x + self.image_encoder.pos_embed
-            x = self.image_encoder.pos_drop(x)
-        else:
-            # Standard CLIP forward pass
-            x = self.image_encoder.conv1(x)  # patch embedding
-            x = x.reshape(x.shape[0], x.shape[1], -1)  # (B, C, H*W)
-            x = x.permute(0, 2, 1)  # (B, H*W, C)
-            
-            # Add class token and position embedding
-            cls_tokens = self.image_encoder.class_embedding.expand(B, -1, -1)
-            x = torch.cat((cls_tokens, x), dim=1)
-            x = x + self.image_encoder.positional_embedding
-        
-        seg_patch_tokens = []
-        det_patch_tokens = []
-        
-        # Process through transformer blocks
-        for i, block in enumerate(self.image_encoder.blocks):
-            x = block(x)
-            
-            # Apply adapters at specified feature layers
-            if (i + 1) in self.features:
-                seg_adapt_med, seg_adapt_out = self.seg_adapters[self.features.index(i+1)](x)
-                det_adapt_med, det_adapt_out = self.det_adapters[self.features.index(i+1)](x)
-                
-                x = 0.8 * x + 0.1 * seg_adapt_out + 0.1 * det_adapt_out
-                
-                seg_patch_tokens.append(seg_adapt_med)
-                det_patch_tokens.append(det_adapt_med)
-        
-        # Apply final layer norm
-        if hasattr(self.image_encoder, 'norm'):
-            x = self.image_encoder.norm(x)
-        
-        # Global pooling (extract cls token)
+        # Extract CLS token for image-level classification
         pooled = x[:, 0]
         
-        # Apply visual projection if it exists
+        # Project to 512-dim shared space if projection exists
         if self.visual_proj is not None:
             pooled = self.visual_proj(pooled)
-        
+            
         return pooled, seg_patch_tokens, det_patch_tokens

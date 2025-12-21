@@ -110,8 +110,14 @@ def main():
 
     #print("here is the model", model)
 
-    for name, param in model.named_parameters():
-        param.requires_grad = True
+    # Freeze everything first
+    for param in model.parameters():
+        param.requires_grad = False
+
+    # Unfreeze only the adapters and the gating parameters
+    for adapter_list in [model.seg_adapters, model.det_adapters]:
+        for param in adapter_list.parameters():
+            param.requires_grad = True
 
 
     # ✅ NEW - ADD THIS:

@@ -139,7 +139,7 @@ def main():
 
     # text prompt
     with torch.cuda.amp.autocast(), torch.no_grad():
-        text_features = encode_text_with_prompt_ensemble(clip_model, REAL_NAME[args.obj], device)
+        text_features = encode_text_with_prompt_ensemble1(clip_model, REAL_NAME[args.obj], device)
 
     best_result = 0
 
