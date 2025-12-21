@@ -303,8 +303,17 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                     # zero-shot, seg head
                     anomaly_maps = []
                     for layer in range(len(seg_patch_tokens)):
-                        seg_patch_tokens[layer] /= seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                        anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
+                        # 1. Get raw visual tokens from the adapter: [196, 768]
+                        raw_tokens = seg_patch_tokens[layer]
+                        # 2. Project the visual tokens using the visual projection layer
+                        # BioMedCLIP requires this projection to align with text
+                        projected_tokens = model.visual_proj(raw_tokens)
+                        projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
+                        #seg_patch_tokens[layer] /= seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                        #anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
+                        
+                        # 4. Now shapes match: [1, 196, 512] @ [512, 2] -> [1, 196, 2]
+                        anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0)
                         B, L, C = anomaly_map.shape
                         H = int(np.sqrt(L))
                         anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
