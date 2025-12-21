@@ -1,4 +1,4 @@
-#%%writefile /kaggle/working/devmodel/test.py
+%%writefile /kaggle/working/devmodel/test.py
 import os
 import argparse
 import random
@@ -10,14 +10,25 @@ from torch.nn import functional as F
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter
 from dataset.medical_few import MedDataset
-from biomedclip.clip import create_model
+from biomedclip.clip import create_model 
 from biomedclip.tokenizer import tokenize
-from biomedclip.adapter import CLIP_Inplanted
+from biomedclip.adapterv3 import CLIP_Inplanted
 from PIL import Image
 from sklearn.metrics import roc_auc_score, precision_recall_curve, pairwise
 from loss import FocalLoss, BinaryDiceLoss
 from utils import augment, cos_sim, encode_text_with_biomedclip_prompt_ensemble1
 from prompt import REAL_NAME
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
+# Add at the very top of your main script (before any imports)
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress TensorFlow warnings
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import warnings
@@ -150,7 +161,7 @@ def main():
 
     # text prompt
     with torch.cuda.amp.autocast(), torch.no_grad():
-        text_features = encode_text_with_prompt_ensemble1(clip_model, REAL_NAME[args.obj], device)
+        text_features = encode_text_with_biomedclip_prompt_ensemble1(clip_model, REAL_NAME[args.obj], device)
 
     best_result = 0
 
@@ -207,8 +218,14 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                 # zero-shot, seg head
                 anomaly_maps = []
                 for layer in range(len(seg_patch_tokens)):
-                    seg_patch_tokens[layer] /= seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                    anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
+                    raw_tokens = seg_patch_tokens[layer]
+                    # 2. Project the visual tokens using the visual projection layer
+                    # BioMedCLIP requires this projection to align with text
+                    projected_tokens = model.visual_proj(raw_tokens)
+                    projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
+                    #seg_patch_tokens[layer] /= seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                    #anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
+                    anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0)
                     B, L, C = anomaly_map.shape
                     H = int(np.sqrt(L))
                     anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
@@ -237,8 +254,12 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                 # zero-shot, det head
                 anomaly_score = 0
                 for layer in range(len(det_patch_tokens)):
-                    det_patch_tokens[layer] /= det_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                    anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)
+                    raw_tokens = det_patch_tokens[layer]
+                    projected_tokens = model.visual_proj(raw_tokens)
+                    projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
+                    anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0)
+                    #det_patch_tokens[layer] /= det_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                    #anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
                     anomaly_score += anomaly_map.mean()
                 det_image_scores_zero.append(anomaly_score.cpu().numpy())
