@@ -110,25 +110,59 @@ def main():
 
     #print("here is the model", model)
 
+
     # Freeze everything first
-    for param in model.parameters():
-        param.requires_grad = False
-
-    # Unfreeze only the adapters and the gating parameters
-    for adapter_list in [model.seg_adapters, model.det_adapters]:
-        for param in adapter_list.parameters():
-            param.requires_grad = True
-
-
-    # ✅ NEW - ADD THIS:
-    seg_optimizer = AdamW(model.seg_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
-    det_optimizer = AdamW(model.det_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
-
-    trainable = [n for n, p in model.named_parameters() if p.requires_grad]
-    print("Trainable params:", len(trainable), "examples:", trainable[:10])
+    for p in model.parameters():
+        p.requires_grad = False
+    
+    # Unfreeze adapters
+    for p in model.seg_adapters.parameters():
+        p.requires_grad = True
+    for p in model.det_adapters.parameters():
+        p.requires_grad = True
+    
+    # Unfreeze the learnable blending (alpha) parameters
+    for p in [model.alpha_backbone, model.alpha_seg, model.alpha_det]:
+        p.requires_grad = True
+    
 
 
-    #✅  SCHEDULER (Warmup + Cosine)
+     # --- uncertainty weights (must exist before optimizer creation) ---
+    log_var_seg = torch.zeros(1, requires_grad=True, device=device)
+    log_var_det = torch.zeros(1, requires_grad=True, device=device)
+    
+    # --- seg optimizer: seg adapters + alpha_backbone + alpha_seg + log_var_seg ---
+    seg_optimizer = AdamW(
+        [
+            {"params": model.seg_adapters.parameters()},
+            {"params": [model.alpha_backbone, model.alpha_seg]},
+            {"params": [log_var_seg]},
+        ],
+        lr=args.learning_rate,
+        betas=(0.5, 0.999),
+        weight_decay=1e-4,
+    )
+    
+    # --- det optimizer: det adapters + alpha_det + log_var_det (NO alpha_backbone) ---
+    det_optimizer = AdamW(
+        [
+            {"params": model.det_adapters.parameters()},
+            {"params": [model.alpha_det]},
+            {"params": [log_var_det]},
+        ],
+        lr=args.learning_rate,
+        betas=(0.5, 0.999),
+        weight_decay=1e-4,
+    )
+    
+    # sanity check: must be 0 overlap
+    seg_params = {id(p) for g in seg_optimizer.param_groups for p in g["params"]}
+    det_params = {id(p) for g in det_optimizer.param_groups for p in g["params"]}
+    print("Overlap params:", len(seg_params & det_params))
+
+
+
+    # SCHEDULER (Warmup + Cosine)
     warmup_seg = LinearLR(seg_optimizer, start_factor=0.1, total_iters=5)
     cosine_seg = CosineAnnealingLR(seg_optimizer, T_max=args.epoch-5, eta_min=1e-6)
     seg_scheduler = SequentialLR(seg_optimizer, schedulers=[warmup_seg, cosine_seg], milestones=[5])
@@ -174,14 +208,6 @@ def main():
 
     best_result = 0
 
-    # --- ADD THIS BEFORE THE TRAINING LOOP ---
-    # Log variances for uncertainty weighting
-    log_var_seg = torch.zeros(1, requires_grad=True, device=device)
-    log_var_det = torch.zeros(1, requires_grad=True, device=device)
-
-    # Add these parameters to your optimizers so they are updated during training
-    seg_optimizer.add_param_group({'params': [log_var_seg]})
-    det_optimizer.add_param_group({'params': [log_var_det]})
 
     for epoch in range(args.epoch):
         print('epoch ', epoch, ':')
