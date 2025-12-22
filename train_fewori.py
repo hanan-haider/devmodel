@@ -125,47 +125,21 @@ def main():
     for p in [model.alpha_backbone, model.alpha_seg, model.alpha_det]:
         p.requires_grad = True
     
-    
-
-    
 
 
-     # --- uncertainty weights (must exist before optimizer creation) ---
-    log_var_seg = torch.zeros(1, requires_grad=True, device=device)
-    log_var_det = torch.zeros(1, requires_grad=True, device=device)
-    
-    # --- seg optimizer: seg adapters + alpha_backbone + alpha_seg + log_var_seg ---
-    seg_optimizer = AdamW(
-        [
-            {"params": model.seg_adapters.parameters()},
-            {"params": [model.alpha_backbone, model.alpha_seg]},
-            {"params": [log_var_seg]},
-        ],
-        lr=args.learning_rate,
-        betas=(0.5, 0.999),
-        weight_decay=1e-4,
-    )
-    
-    # --- det optimizer: det adapters + alpha_det + log_var_det (NO alpha_backbone) ---
-    det_optimizer = AdamW(
-        [
-            {"params": model.det_adapters.parameters()},
-            {"params": [model.alpha_det]},
-            {"params": [log_var_det]},
-        ],
-        lr=args.learning_rate,
-        betas=(0.5, 0.999),
-        weight_decay=1e-4,
-    )
-    
-    # sanity check: must be 0 overlap
-    seg_params = {id(p) for g in seg_optimizer.param_groups for p in g["params"]}
-    det_params = {id(p) for g in det_optimizer.param_groups for p in g["params"]}
-    print("Overlap params:", len(seg_params & det_params))
+    #  NEW - ADD THIS:
+    seg_optimizer = AdamW(model.seg_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
+    det_optimizer = AdamW(model.det_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
+
+    #  Add alpha params to optimizers so they get updated
+    seg_optimizer.add_param_group({"params": [model.alpha_backbone, model.alpha_seg]})
+    det_optimizer.add_param_group({"params": [model.alpha_backbone, model.alpha_det]})
+
+    trainable = [n for n, p in model.named_parameters() if p.requires_grad]
+    print("Trainable params:", len(trainable), "examples:", trainable[:10])
 
 
-
-    # SCHEDULER (Warmup + Cosine)
+    #✅  SCHEDULER (Warmup + Cosine)
     warmup_seg = LinearLR(seg_optimizer, start_factor=0.1, total_iters=5)
     cosine_seg = CosineAnnealingLR(seg_optimizer, T_max=args.epoch-5, eta_min=1e-6)
     seg_scheduler = SequentialLR(seg_optimizer, schedulers=[warmup_seg, cosine_seg], milestones=[5])
@@ -211,6 +185,14 @@ def main():
 
     best_result = 0
 
+    # --- ADD THIS BEFORE THE TRAINING LOOP ---
+    # Log variances for uncertainty weighting
+    log_var_seg = torch.zeros(1, requires_grad=True, device=device)
+    log_var_det = torch.zeros(1, requires_grad=True, device=device)
+
+    # Add these parameters to your optimizers so they are updated during training
+    seg_optimizer.add_param_group({'params': [log_var_seg]})
+    det_optimizer.add_param_group({'params': [log_var_det]})
 
     for epoch in range(args.epoch):
         print('epoch ', epoch, ':')
@@ -272,17 +254,10 @@ def main():
                 else:
                     loss = torch.exp(-log_var_det) * det_loss + log_var_det
                     #loss = det_loss
-                    #loss.requires_grad_(True)
-                    #det_optimizer.zero_grad()
-                    #loss.backward()
-                    #det_optimizer.step()
                     loss.requires_grad_(True)
-                    seg_optimizer.zero_grad()  # ✅ add this
                     det_optimizer.zero_grad()
                     loss.backward()
-                    seg_optimizer.step()       # ✅ add this
                     det_optimizer.step()
-
 
                 loss_list.append(loss.item())
 
@@ -311,38 +286,11 @@ def main():
         if result > best_result:
             best_result = result
             print("Best result\n")
-            #if args.save_model == 1:
-            #    ckp_path = os.path.join(args.save_path, f'{args.obj}.pth')
-            #    torch.save({'seg_adapters': model.seg_adapters.state_dict(),
-            #                'det_adapters': model.det_adapters.state_dict()}, 
-            #                ckp_path)
-
-
             if args.save_model == 1:
                 ckp_path = os.path.join(args.save_path, f'{args.obj}.pth')
-                torch.save(
-                    {
-                        "seg_adapters": model.seg_adapters.state_dict(),
-                        "det_adapters": model.det_adapters.state_dict(),
-                        
-                        # ✅ Save learned blending weights (alpha parameters)
-                        "alpha_backbone": model.alpha_backbone.detach().cpu(),
-                        "alpha_seg": model.alpha_seg.detach().cpu(),
-                        "alpha_det": model.alpha_det.detach().cpu(),
-                        
-                        # ✅ Save learned uncertainty weights
-                        "log_var_seg": log_var_seg.detach().cpu(),
-                        "log_var_det": log_var_det.detach().cpu(),
-                        
-                        # (Optional but recommended for resuming training)
-                        "seg_optimizer": seg_optimizer.state_dict(),
-                        "det_optimizer": det_optimizer.state_dict(),
-                        "epoch": epoch,
-                        "best_result": best_result,
-                    },
-                    ckp_path
-                )
-
+                torch.save({'seg_adapters': model.seg_adapters.state_dict(),
+                            'det_adapters': model.det_adapters.state_dict()}, 
+                            ckp_path)
 
 
 
