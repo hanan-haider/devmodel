@@ -205,8 +205,7 @@ def main():
                     #anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0) 
                     anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0)   
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
-                    #anomaly_score = torch.mean(anomaly_map, dim=-1)
-                    anomaly_score = torch.max(anomaly_map, dim=-1)
+                    anomaly_score = torch.mean(anomaly_map, dim=-1)
                     det_loss += loss_bce(anomaly_score, image_label)
 
                 if CLASS_INDEX[args.obj] > 0:
