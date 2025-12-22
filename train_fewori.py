@@ -125,6 +125,9 @@ def main():
     for p in [model.alpha_backbone, model.alpha_seg, model.alpha_det]:
         p.requires_grad = True
     
+    
+
+    
 
 
      # --- uncertainty weights (must exist before optimizer creation) ---
@@ -269,10 +272,17 @@ def main():
                 else:
                     loss = torch.exp(-log_var_det) * det_loss + log_var_det
                     #loss = det_loss
+                    #loss.requires_grad_(True)
+                    #det_optimizer.zero_grad()
+                    #loss.backward()
+                    #det_optimizer.step()
                     loss.requires_grad_(True)
+                    seg_optimizer.zero_grad()  # ✅ add this
                     det_optimizer.zero_grad()
                     loss.backward()
+                    seg_optimizer.step()       # ✅ add this
                     det_optimizer.step()
+
 
                 loss_list.append(loss.item())
 
@@ -301,11 +311,38 @@ def main():
         if result > best_result:
             best_result = result
             print("Best result\n")
+            #if args.save_model == 1:
+            #    ckp_path = os.path.join(args.save_path, f'{args.obj}.pth')
+            #    torch.save({'seg_adapters': model.seg_adapters.state_dict(),
+            #                'det_adapters': model.det_adapters.state_dict()}, 
+            #                ckp_path)
+
+
             if args.save_model == 1:
                 ckp_path = os.path.join(args.save_path, f'{args.obj}.pth')
-                torch.save({'seg_adapters': model.seg_adapters.state_dict(),
-                            'det_adapters': model.det_adapters.state_dict()}, 
-                            ckp_path)
+                torch.save(
+                    {
+                        "seg_adapters": model.seg_adapters.state_dict(),
+                        "det_adapters": model.det_adapters.state_dict(),
+                        
+                        # ✅ Save learned blending weights (alpha parameters)
+                        "alpha_backbone": model.alpha_backbone.detach().cpu(),
+                        "alpha_seg": model.alpha_seg.detach().cpu(),
+                        "alpha_det": model.alpha_det.detach().cpu(),
+                        
+                        # ✅ Save learned uncertainty weights
+                        "log_var_seg": log_var_seg.detach().cpu(),
+                        "log_var_det": log_var_det.detach().cpu(),
+                        
+                        # (Optional but recommended for resuming training)
+                        "seg_optimizer": seg_optimizer.state_dict(),
+                        "det_optimizer": det_optimizer.state_dict(),
+                        "epoch": epoch,
+                        "best_result": best_result,
+                    },
+                    ckp_path
+                )
+
 
 
 
