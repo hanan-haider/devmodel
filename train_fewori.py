@@ -124,6 +124,10 @@ def main():
     seg_optimizer = AdamW(model.seg_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
     det_optimizer = AdamW(model.det_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
 
+    trainable = [n for n, p in model.named_parameters() if p.requires_grad]
+    print("Trainable params:", len(trainable), "examples:", trainable[:10])
+
+
     #✅  SCHEDULER (Warmup + Cosine)
     warmup_seg = LinearLR(seg_optimizer, start_factor=0.1, total_iters=5)
     cosine_seg = CosineAnnealingLR(seg_optimizer, T_max=args.epoch-5, eta_min=1e-6)
@@ -202,7 +206,7 @@ def main():
                     anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0)   
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
                     #anomaly_score = torch.mean(anomaly_map, dim=-1)
-                    anomaly_score = torch.amax(anomaly_map, dim=-1)
+                    anomaly_score = torch.max(anomaly_map, dim=-1)
                     det_loss += loss_bce(anomaly_score, image_label)
 
                 if CLASS_INDEX[args.obj] > 0:
@@ -238,7 +242,8 @@ def main():
                     det_optimizer.step()
 
                 else:
-                    loss = det_loss
+                    loss = torch.exp(-log_var_det) * det_loss + log_var_det
+                    #loss = det_loss
                     loss.requires_grad_(True)
                     det_optimizer.zero_grad()
                     loss.backward()
