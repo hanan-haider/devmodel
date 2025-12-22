@@ -71,7 +71,7 @@ def main():
     # Adapter configs
     parser.add_argument('--features_list', type=int, nargs="+", default=None,
                         help="Auto-select based on task if None")
-    parser.add_argument('--bottleneck', type=int, default=128)  # ✅ Reduced from 256
+    parser.add_argument('--bottleneck', type=int, default=768)  # ✅ Reduced from 256
     parser.add_argument('--init_scale', type=float, default=1e-3)
     parser.add_argument('--normalize_alphas', action='store_true')  # ✅ NEW
     
