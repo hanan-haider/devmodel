@@ -1,29 +1,35 @@
 import torch
 from torch import nn
 
-# ----------------------------
-# Residual CLIP Adapter (Standard)
-# ----------------------------
 class ClipAdapter(nn.Module):
     def __init__(self, c_in: int, bottleneck: int = 256, dropout: float = 0.1):
         super().__init__()
         self.ln = nn.LayerNorm(c_in)
+        
+        # Bottleneck MLP with GELU (consistent with BioMedCLIP)
         self.mlp = nn.Sequential(
             nn.Linear(c_in, bottleneck, bias=False),
-            nn.GELU(), # GELU matches BioMedCLIP's internal architecture
+            nn.GELU(), # BioMedCLIP uses GELU activations
+            nn.Dropout(dropout),
             nn.Linear(bottleneck, c_in, bias=False),
             nn.Dropout(dropout),
         )
-        self.scale = nn.Parameter(torch.zeros(1))
+        
+        # Learnable gating parameter initialized at 0
+        # Start training using only pre-trained knowledge, then adapt
+        self.gate = nn.Parameter(torch.zeros(1))
 
     def forward(self, x):
         residual = x
         x = self.ln(x)
         x = self.mlp(x)
-        med = x
-        out = residual + self.scale * x
+        
+        # 'med' is the high-resolution feature for the memory bank
+        med = x 
+        
+        # 'out' is the updated transformer feature
+        out = residual + self.gate * x
         return med, out
-
 # ----------------------------
 # CLIP_Inplanted for BioMedCLIP (Modified with Learnable Alphas)
 # ----------------------------

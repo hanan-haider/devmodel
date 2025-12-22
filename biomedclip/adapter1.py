@@ -122,8 +122,8 @@ class CLIP_Inplanted(nn.Module):
                 x = x + seg_adapt_out + det_adapt_out
                 
                 # Store for loss calculation (removing CLS token at index 0)
-                seg_patch_tokens.append(seg_adapt_out[:, 1:, :])
-                det_patch_tokens.append(det_adapt_out[:, 1:, :])
+                seg_patch_tokens.append(seg_adapt_out)
+                det_patch_tokens.append(det_adapt_out)
         
         # --- 3. Final Norm & Pooling ---
         if self.is_timm:
