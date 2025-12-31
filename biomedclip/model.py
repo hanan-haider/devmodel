@@ -97,6 +97,16 @@ def _build_vision_tower(
     if isinstance(vision_cfg, dict):
         vision_cfg = BioMedCLIPVisionCfg(**vision_cfg)
 
+
+        # -------------------------------
+    # ✅ FORCE VisionTransformer
+    # -------------------------------
+    use_vit = (
+        not hasattr(vision_cfg, "timm_model_name")
+        or vision_cfg.timm_model_name is None
+        or vision_cfg.timm_model_name == "None"
+    )
+
     # OpenAI models are pretrained w/ QuickGELU but native nn.GELU is both faster and more
     # memory efficient in recent PyTorch releases (>= 1.10).
     # NOTE: timm models always use native GELU regardless of quick_gelu flag.
