@@ -63,7 +63,7 @@ def main():
                         help='Path to saved checkpoint')
     parser.add_argument('--features_list', type=int, nargs="+", default=None,
                         help='Layer indices (auto-select if None)')
-    parser.add_argument('--bottleneck', type=int, default=128)
+    parser.add_argument('--bottleneck', type=int, default=768)
     parser.add_argument('--dropout', type=float, default=0.2)
     parser.add_argument('--init_scale', type=float, default=1e-3)
     parser.add_argument('--normalize_alphas', action='store_true')
