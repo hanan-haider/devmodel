@@ -406,10 +406,7 @@ def build_model_from_biomedclip_state_dict(
         width=vision_width,
         patch_size=vision_patch_size,
         image_size=image_size,
-        timm_model_name="vit_base_patch16_224",
-        timm_model_pretrained=False,
-        timm_pool='',
-        timm_proj='linear',
+
     )
     print("\nvision configs inside build model from state dict:", vision_cfg)
 
@@ -419,10 +416,7 @@ def build_model_from_biomedclip_state_dict(
         width=transformer_width,
         heads=transformer_heads,
         layers=transformer_layers,
-        hf_model_name='microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract',
-        hf_tokenizer_name='microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract',
-        hf_proj_type='mlp',
-        hf_pooler_type='cls_last_hidden_state_pooler',
+
     )
     #print("\ntext configs inside build model from state dict:", text_cfg)
 
