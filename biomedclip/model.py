@@ -95,7 +95,7 @@ def _build_vision_tower(
         cast_dtype: Optional[torch.dtype] = None
 ):
     if isinstance(vision_cfg, dict):
-        vision_cfg = CLIPVisionCfg(**vision_cfg)
+        vision_cfg = BioMedCLIPVisionCfg(**vision_cfg)
 
     # OpenAI models are pretrained w/ QuickGELU but native nn.GELU is both faster and more
     # memory efficient in recent PyTorch releases (>= 1.10).
