@@ -36,7 +36,7 @@ class BioMedCLIPVisionCfg:
     attentional_pool: bool = False
     n_queries: int = 256
     attn_pooler_heads: int = 8
-    timm_model_name: str = None
+    timm_model_name: str = "vit_base_patch16_224"
     timm_model_pretrained: bool = False
     timm_pool: str = ''
     timm_proj: str = 'linear'
