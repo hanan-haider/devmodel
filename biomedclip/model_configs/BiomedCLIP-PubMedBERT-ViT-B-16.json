@@ -2,7 +2,7 @@
   "embed_dim": 512,
   "vision_cfg": {
       
-      "timm_model_name": "None",
+      "timm_model_name": "vit_base_patch16_224",
       "timm_model_pretrained": false,
       "timm_pool": "",
       "timm_proj": "linear",
