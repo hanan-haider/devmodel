@@ -104,7 +104,7 @@ def _build_vision_tower(
 
     if vision_cfg.timm_model_name:
         visual = TimmModel(
-            vision_cfg.timm_model_name,
+            model_name=vision_cfg.timm_model_name,
             pretrained=vision_cfg.timm_model_pretrained,
             pool=vision_cfg.timm_pool,
             proj=vision_cfg.timm_proj,
