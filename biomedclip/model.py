@@ -90,30 +90,17 @@ def get_cast_dtype(precision: str):
 
 def _build_vision_tower(
         embed_dim: int,
-        vision_cfg: BioMedCLIPVisionCfg,
+        vision_cfg: CLIPVisionCfg,
         quick_gelu: bool = False,
         cast_dtype: Optional[torch.dtype] = None
 ):
     if isinstance(vision_cfg, dict):
-        vision_cfg = BioMedCLIPVisionCfg(**vision_cfg)
-
-
-        # -------------------------------
-    # ✅ FORCE VisionTransformer
-    # -------------------------------
-    use_vit = (
-        not hasattr(vision_cfg, "timm_model_name")
-        or vision_cfg.timm_model_name is None
-        or vision_cfg.timm_model_name == "None"
-    )
+        vision_cfg = CLIPVisionCfg(**vision_cfg)
 
     # OpenAI models are pretrained w/ QuickGELU but native nn.GELU is both faster and more
     # memory efficient in recent PyTorch releases (>= 1.10).
     # NOTE: timm models always use native GELU regardless of quick_gelu flag.
     act_layer = QuickGELU if quick_gelu else nn.GELU
-    #print("\n Building vision tower...")
-    #print("Vision config:", vision_cfg,"\n")
-    print("\nVision config for vision tower:", vision_cfg)
 
     if vision_cfg.timm_model_name:
         visual = TimmModel(
@@ -127,33 +114,6 @@ def _build_vision_tower(
             patch_drop=vision_cfg.patch_dropout if vision_cfg.patch_dropout > 0 else None,
             embed_dim=embed_dim,
             image_size=vision_cfg.image_size,
-        )
-    else:
-        vision_heads = vision_cfg.width // vision_cfg.head_width
-        norm_layer = LayerNormFp32 if cast_dtype in (torch.float16, torch.bfloat16) else LayerNorm
-        if vision_cfg.norm_kwargs:
-            norm_layer = partial(norm_layer, **vision_cfg.norm_kwargs)
-        if vision_cfg.act_kwargs is not None:
-            act_layer = partial(act_layer, **vision_cfg.act_kwargs)
-
-        visual = VisionTransformer(
-            image_size=vision_cfg.image_size,
-            patch_size=vision_cfg.patch_size,
-            width=vision_cfg.width,
-            layers=vision_cfg.layers,
-            heads=vision_heads,
-            mlp_ratio=vision_cfg.mlp_ratio,
-            ls_init_value=vision_cfg.ls_init_value,
-            patch_dropout=vision_cfg.patch_dropout,
-            input_patchnorm=vision_cfg.input_patchnorm,
-            global_average_pool=vision_cfg.global_average_pool,
-            attentional_pool=vision_cfg.attentional_pool,
-            n_queries=vision_cfg.n_queries,
-            attn_pooler_heads=vision_cfg.attn_pooler_heads,
-            output_tokens=vision_cfg.output_tokens,
-            output_dim=embed_dim,
-            act_layer=act_layer,
-            norm_layer=norm_layer,
         )
 
     return visual
