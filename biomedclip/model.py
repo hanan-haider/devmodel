@@ -90,7 +90,7 @@ def get_cast_dtype(precision: str):
 
 def _build_vision_tower(
         embed_dim: int,
-        vision_cfg: CLIPVisionCfg,
+        vision_cfg: BioMedCLIPVisionCfg,
         quick_gelu: bool = False,
         cast_dtype: Optional[torch.dtype] = None
 ):
