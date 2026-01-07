@@ -141,11 +141,11 @@ def main():
 
     #✅  SCHEDULER (Warmup + Cosine)
     warmup_seg = LinearLR(seg_optimizer, start_factor=0.1, total_iters=5)
-    cosine_seg = CosineAnnealingLR(seg_optimizer, T_max=args.epoch-5, eta_min=1e-6)
+    cosine_seg = CosineAnnealingLR(seg_optimizer, T_max=args.epoch, eta_min=1e-6)
     seg_scheduler = SequentialLR(seg_optimizer, schedulers=[warmup_seg, cosine_seg], milestones=[5])
 
     warmup_det = LinearLR(det_optimizer, start_factor=0.1, total_iters=5)
-    cosine_det = CosineAnnealingLR(det_optimizer, T_max=args.epoch-5, eta_min=1e-6)
+    cosine_det = CosineAnnealingLR(det_optimizer, T_max=args.epoch, eta_min=1e-6)
     det_scheduler = SequentialLR(det_optimizer, schedulers=[warmup_det, cosine_det], milestones=[5])
 
     # load test dataset

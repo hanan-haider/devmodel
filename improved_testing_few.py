@@ -59,7 +59,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--seed', type=int, default=111)
     parser.add_argument('--shot', type=int, default=4)
-    parser.add_argument('--iterate', type=int, default=0)
+    parser.add_argument('--iterate', type=int, default=0) 
     
     # Checkpoint configs (must match training)
     parser.add_argument('--checkpoint_path', type=str, default='./ckpt/few-shot/',
