@@ -1,3 +1,6 @@
+
+
+#%%writefile /kaggle/working/devmodel/test.py
 import os
 import argparse
 import random
@@ -8,7 +11,7 @@ from torch.nn import functional as F
 from tqdm import tqdm
 from dataset.medical_few import MedDataset
 from biomedclip.clip import create_model 
-from biomedclip.adapterv5_improved import CLIP_Inplanted  # ✅ Use improved adapter
+from biomedclip.adapterv5 import CLIP_Inplanted
 from sklearn.metrics import roc_auc_score
 from utils import augment, cos_sim, encode_text_with_biomedclip_prompt_ensemble1
 from prompt import REAL_NAME
@@ -58,7 +61,7 @@ def main():
     parser.add_argument('--shot', type=int, default=4)
     parser.add_argument('--iterate', type=int, default=0)
     
-    # ✅ Checkpoint configs (must match training)
+    # Checkpoint configs (must match training)
     parser.add_argument('--checkpoint_path', type=str, default='./ckpt/few-shot/',
                         help='Path to saved checkpoint')
     parser.add_argument('--features_list', type=int, nargs="+", default=None,
@@ -80,7 +83,7 @@ def main():
     
     setup_seed(args.seed)
     
-    # ✅ Auto-select layers (must match training)
+    # Auto-select layers (must match training)
     if args.features_list is None:
         if CLASS_INDEX[args.obj] > 0:  # Segmentation
             args.features_list = [3, 6, 9, 12]
@@ -100,7 +103,7 @@ def main():
     clip_model.eval()
     print("✓ Base model loaded\n")
     
-    # ✅ Build model with same config as training
+    # Build model with same config as training
     print("Building adapter model...")
     model = CLIP_Inplanted(
         clip_model=clip_model,
@@ -113,20 +116,26 @@ def main():
     model.eval()
     print("✓ Adapter model built\n")
     
-    # ✅ Load trained checkpoint
+    # ✅ FIXED: Load trained checkpoint with weights_only=False
     checkpoint_file = os.path.join(args.checkpoint_path, f'{args.obj}_best.pth')
     if not os.path.exists(checkpoint_file):
         # Try old naming convention
         checkpoint_file = os.path.join(args.checkpoint_path, f'{args.obj}.pth')
     
     print(f"Loading checkpoint: {checkpoint_file}")
-    checkpoint = torch.load(checkpoint_file, map_location=device)
+    
+    # ✅ FIX for PyTorch 2.6+
+    try:
+        checkpoint = torch.load(checkpoint_file, map_location=device, weights_only=False)
+    except TypeError:
+        # Fallback for older PyTorch versions
+        checkpoint = torch.load(checkpoint_file, map_location=device)
     
     # Load adapter weights
     model.seg_adapters.load_state_dict(checkpoint["seg_adapters"])
     model.det_adapters.load_state_dict(checkpoint["det_adapters"])
     
-    # ✅ Load alpha parameters if saved
+    # Load alpha parameters if saved
     if "alpha_backbone" in checkpoint:
         model.alpha_backbone.data = checkpoint["alpha_backbone"].to(device)
         model.alpha_seg.data = checkpoint["alpha_seg"].to(device)
@@ -136,7 +145,7 @@ def main():
     print(f"✓ Checkpoint loaded (epoch {checkpoint.get('epoch', 'unknown')})")
     print(f"  Training result: {checkpoint.get('best_result', 'N/A'):.4f}\n")
     
-    # ✅ Print learned alphas
+    # Print learned alphas
     model.get_alpha_summary()
     
     # Load test dataset
@@ -234,7 +243,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                 det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens]
                 
                 if CLASS_INDEX[args.obj] > 0:
-                    # ===== SEGMENTATION TASK =====
+                    # SEGMENTATION TASK
                     
                     # Few-shot (memory bank comparison)
                     anomaly_maps_few_shot = []
@@ -270,7 +279,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                     seg_score_map_zero.append(score_map_zero)
                 
                 else:
-                    # ===== DETECTION TASK =====
+                    # DETECTION TASK
                     
                     # Few-shot
                     anomaly_maps_few_shot = []
@@ -305,7 +314,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
     gt_mask_list = np.array(gt_mask_list)
     gt_mask_list = (gt_mask_list > 0).astype(np.int_)
     
-    # ===== COMPUTE METRICS =====
+    # COMPUTE METRICS
     if CLASS_INDEX[args.obj] > 0:
         # Segmentation metrics
         seg_score_map_zero = np.array(seg_score_map_zero)
