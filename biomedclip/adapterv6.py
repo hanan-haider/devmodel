@@ -1,176 +1,194 @@
-# adapter_improved.py
 import torch
 from torch import nn
-from torch.nn import functional as F
+import torch.nn.functional as F
 
-class ClipAdapter(nn.Module):
-    """
-    Improved adapter with better regularization and initialization.
-    """
+
+class ImprovedClipAdapter(nn.Module):
+    """Enhanced adapter with multi-scale feature fusion and attention"""
     def __init__(self, c_in: int, bottleneck: int = 256, dropout: float = 0.1):
         super().__init__()
         
-        # Layer normalization before adaptation
-        self.ln = nn.LayerNorm(c_in)
+        # Dual normalization for stability
+        self.ln1 = nn.LayerNorm(c_in)
+        self.ln2 = nn.LayerNorm(c_in)
         
-        # Bottleneck MLP with residual scaling
+        # Multi-scale bottleneck with residual connections
         self.down_proj = nn.Linear(c_in, bottleneck, bias=False)
         self.activation = nn.GELU()
         self.dropout1 = nn.Dropout(dropout)
+        
+        # Enhanced middle layer with grouped convolution concept
+        self.mid_proj = nn.Sequential(
+            nn.Linear(bottleneck, bottleneck, bias=False),
+            nn.GELU(),
+            nn.Dropout(dropout)
+        )
+        
         self.up_proj = nn.Linear(bottleneck, c_in, bias=False)
         self.dropout2 = nn.Dropout(dropout)
         
-        # Learnable gating parameter (starts at 0 for stability)
-        self.gate = nn.Parameter(torch.zeros(1))
+        # Squeeze-and-Excitation style channel attention
+        self.se = nn.Sequential(
+            nn.Linear(c_in, c_in // 4),
+            nn.GELU(),
+            nn.Linear(c_in // 4, c_in),
+            nn.Sigmoid()
+        )
         
-        # Initialize weights with smaller values for stability
-        nn.init.kaiming_normal_(self.down_proj.weight, a=0, mode='fan_in')
-        nn.init.zeros_(self.up_proj.weight)
-    
+        # Learnable gating with better initialization
+        self.gate = nn.Parameter(torch.ones(1) * 0.1)  # Start with small adaptation
+        
+        # Feature scaling for better gradient flow
+        self.scale = nn.Parameter(torch.ones(1))
+
     def forward(self, x):
-        """
-        Args:
-            x: Input features [batch, seq_len, dim]
-        
-        Returns:
-            med: Adapted features for memory bank
-            out: Residual-connected output for transformer
-        """
         residual = x
         
-        # Normalize then adapt
-        x = self.ln(x)
-        x = self.down_proj(x)
-        x = self.activation(x)
-        x = self.dropout1(x)
-        x = self.up_proj(x)
-        x = self.dropout2(x)
+        # Main adaptation path
+        x_norm = self.ln1(x)
+        adapted = self.down_proj(x_norm)
+        adapted = self.activation(adapted)
+        adapted = self.dropout1(adapted)
         
-        # 'med' is the adapted feature for memory bank
-        med = x
+        # Middle enhancement
+        adapted = adapted + self.mid_proj(adapted)  # Residual in bottleneck
         
-        # 'out' adds gated residual connection
-        out = residual + self.gate.tanh() * x  # tanh bounds the gate
+        adapted = self.up_proj(adapted)
+        adapted = self.dropout2(adapted)
+        
+        # Apply channel attention
+        x_pooled = x.mean(dim=1, keepdim=True)  # Global context
+        attention = self.se(x_pooled)
+        adapted = adapted * attention
+        
+        # High-resolution feature for memory bank (normalized separately)
+        med = self.ln2(adapted) * self.scale
+        
+        # Gated residual connection for transformer feature
+        out = residual + self.gate * adapted
         
         return med, out
 
-class CLIP_Inplanted(nn.Module):
-    """
-    Improved CLIP with adapters, learnable blending, and multi-scale aggregation.
-    """
+
+class CLIP_Inplanted_V2(nn.Module):
+    """Enhanced BioMedCLIP with improved adaptation strategy"""
     def __init__(
         self,
         clip_model,
         features,           # layer indices e.g. [3, 6, 9, 12]
-        bottleneck=256,
-        dropout=0.1,
+        bottleneck=384,     # Increased from 256
+        dropout=0.15,       # Slightly increased for regularization
     ):
         super().__init__()
         self.clipmodel = clip_model
         self.features = sorted(list(features))
         num_adapted_layers = len(self.features)
-        
-        # Learnable temperature (initialized at CLIP's default)
-        self.temperature = nn.Parameter(torch.ones(1) * 0.07)
-        
-        # timm ViT trunk used by BioMedCLIP
+
+        # Image encoder from BioMedCLIP
         self.image_encoder = clip_model.visual.trunk
-        
-        # Final projection: handles dimensionality alignment (768 -> 512)
+
+        # Visual projection layer
         if hasattr(clip_model.visual, "head") and hasattr(clip_model.visual.head, "proj"):
             self.visual_proj = clip_model.visual.head.proj
         else:
             self.visual_proj = getattr(clip_model.visual, "proj", None)
-        
+
         hidden_dim = getattr(self.image_encoder, "num_features", None)
         if hidden_dim is None:
             hidden_dim = self.image_encoder.embed_dim
-        
-        # Build adapters
+
+        # Enhanced adapters
         self.seg_adapters = nn.ModuleList(
-            [ClipAdapter(hidden_dim, bottleneck=bottleneck, dropout=dropout)
+            [ImprovedClipAdapter(hidden_dim, bottleneck=bottleneck, dropout=dropout)
              for _ in self.features]
         )
         self.det_adapters = nn.ModuleList(
-            [ClipAdapter(hidden_dim, bottleneck=bottleneck, dropout=dropout)
+            [ImprovedClipAdapter(hidden_dim, bottleneck=bottleneck, dropout=dropout)
              for _ in self.features]
         )
+
+        # Layer-wise learnable blending with better initialization
+        # Use softmax-based blending for guaranteed sum-to-1
+        self.blend_logits = nn.ParameterList([
+            nn.Parameter(torch.tensor([2.0, 0.0, 0.0]))  # Bias toward backbone initially
+            for _ in range(num_adapted_layers)
+        ])
         
-        # Learnable blending parameters (layer-wise)
-        # Use softmax-normalized weights for better stability
-        self.alpha_backbone = nn.Parameter(torch.ones(num_adapted_layers) * 0.8)
-        self.alpha_seg = nn.Parameter(torch.ones(num_adapted_layers) * 0.1)
-        self.alpha_det = nn.Parameter(torch.ones(num_adapted_layers) * 0.1)
+        # Cross-layer feature fusion
+        self.layer_weights = nn.Parameter(torch.ones(num_adapted_layers) / num_adapted_layers)
         
-        # Learnable layer weights for multi-scale aggregation
-        self.seg_layer_weights = nn.Parameter(torch.ones(num_adapted_layers) / num_adapted_layers)
-        self.det_layer_weights = nn.Parameter(torch.ones(num_adapted_layers) / num_adapted_layers)
+        # Learnable temperature for better calibration
+        self.temperature = nn.Parameter(torch.ones(1) * 0.07)
         
-        # Freeze backbone parameters
+        # Feature aggregation module
+        self.feature_fusion = nn.ModuleList([
+            nn.Sequential(
+                nn.LayerNorm(hidden_dim),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.GELU()
+            ) for _ in range(num_adapted_layers)
+        ])
+
+        # Freeze backbone
         for p in self.image_encoder.parameters():
             p.requires_grad = False
+        
+        # Freeze visual projection initially (can be unfrozen later if needed)
         if self.visual_proj is not None:
             for p in self.visual_proj.parameters():
                 p.requires_grad = False
-    
+
     def forward(self, x):
-        """
-        Forward pass with adapter injection.
-        
-        Args:
-            x: Input images [batch, 3, 224, 224]
-        
-        Returns:
-            pooled: Global image features [batch, embed_dim]
-            seg_patch_tokens: List of segmentation adapter features
-            det_patch_tokens: List of detection adapter features
-        """
         B = x.shape[0]
-        
+
         # ViT input embedding
         x = self.image_encoder.patch_embed(x)
         cls_token = self.image_encoder.cls_token.expand(B, -1, -1)
         x = torch.cat((cls_token, x), dim=1)
         x = x + self.image_encoder.pos_embed
         x = self.image_encoder.pos_drop(x)
-        
+
         seg_patch_tokens = []
         det_patch_tokens = []
-        
-        # Transformer blocks loop
+
+        # Transformer blocks with adaptive blending
         for layer_idx, block in enumerate(self.image_encoder.blocks, start=1):
             x = block(x)
-            
+
             if layer_idx in self.features:
                 pos = self.features.index(layer_idx)
-                
+
                 # Get adapter features
                 seg_med, seg_out = self.seg_adapters[pos](x)
                 det_med, det_out = self.det_adapters[pos](x)
                 
-                # Normalized blending (ensures weights sum to ~1)
-                alpha_sum = (
-                    self.alpha_backbone[pos].abs() +
-                    self.alpha_seg[pos].abs() +
-                    self.alpha_det[pos].abs() + 1e-6
-                )
+                # Softmax-based adaptive blending (guarantees sum to 1)
+                blend_weights = F.softmax(self.blend_logits[pos], dim=0)
                 
+                # Enhanced feature fusion with learned aggregation
+                x_fused = self.feature_fusion[pos](x)
+                
+                # Blend: backbone + seg + det
                 x = (
-                    (self.alpha_backbone[pos].abs() / alpha_sum) * x +
-                    (self.alpha_seg[pos].abs() / alpha_sum) * seg_out +
-                    (self.alpha_det[pos].abs() / alpha_sum) * det_out
+                    blend_weights[0] * x_fused
+                    + blend_weights[1] * seg_out
+                    + blend_weights[2] * det_out
                 )
-                
-                # Store adapter outputs (without CLS token for local features)
+
                 seg_patch_tokens.append(seg_med)
                 det_patch_tokens.append(det_med)
-        
-        # Final layer norm and pooling
+
         x = self.image_encoder.norm(x)
         pooled = x[:, 0]  # CLS token
-        
-        # Project to embedding space
+
         if self.visual_proj is not None:
             pooled = self.visual_proj(pooled)
-        
+
         return pooled, seg_patch_tokens, det_patch_tokens
+    
+    def get_adaptation_weights(self):
+        """Helper to visualize learned blending weights"""
+        weights = []
+        for logits in self.blend_logits:
+            weights.append(F.softmax(logits, dim=0).detach().cpu().numpy())
+        return weights
