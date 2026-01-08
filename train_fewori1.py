@@ -9,7 +9,7 @@ from torch.nn import functional as F
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter
 from dataset.medical_few import MedDataset
-from biomedclip.clip import create_model , _MODEL_CKPT_PATHS
+from biomedclip.clip import create_model 
 from biomedclip.tokenizer import tokenize
 from biomedclip.adapterv4 import CLIP_Inplanted
 from PIL import Image
@@ -214,8 +214,7 @@ def main():
                     projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
                     #det_patch_tokens[layer] = det_patch_tokens[layer] / det_patch_tokens[layer].norm(dim=-1, keepdim=True)
                     #anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0) 
-                                   #learnable temperature
-                    anomaly_map = ( self.temperature * projected_tokens @ text_features).unsqueeze(0)   
+                    anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0)   
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
                     anomaly_score = torch.mean(anomaly_map, dim=-1)
                     det_loss += loss_bce(anomaly_score, image_label)

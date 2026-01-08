@@ -44,6 +44,7 @@ class CLIP_Inplanted(nn.Module):
         super().__init__()
         self.clipmodel = clip_model
         self.features = sorted(list(features))
+        self.temperature = nn.Parameter(torch.ones(1) * 0.07)  # learnable temperature
         num_adapted_layers = len(self.features)
 
         # timm ViT trunk used by BioMedCLIP
