@@ -1,4 +1,4 @@
-%%writefile /kaggle/working/devmodel/train_few.py
+#%%writefile /kaggle/working/devmodel/train_few.py
 import os
 import argparse
 import random
