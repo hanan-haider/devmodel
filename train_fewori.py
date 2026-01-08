@@ -9,7 +9,7 @@ from torch.nn import functional as F
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter
 from dataset.medical_few import MedDataset
-from biomedclip.clip import create_model , _MODEL_CKPT_PATHS
+from biomedclip.clip import create_model 
 from biomedclip.tokenizer import tokenize
 from biomedclip.adapterv4 import CLIP_Inplanted
 from PIL import Image
