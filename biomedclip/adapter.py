@@ -93,8 +93,8 @@ class CLIP_Inplanted(nn.Module):
                 x = (x_seg + x_det) / 2.0
                 
                 # Store the patch tokens (excluding CLS token at index 0)
-                seg_patch_tokens.append(seg_med[:, 1:, :]) 
-                det_patch_tokens.append(det_med[:, 1:, :])
+                seg_patch_tokens.append(seg_med) 
+                det_patch_tokens.append(det_med)
         
         # --- Standard ViT Exit ---
         x = self.image_encoder.norm(x)
