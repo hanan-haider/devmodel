@@ -9,9 +9,9 @@ from torch.nn import functional as F
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter
 from dataset.medical_few import MedDataset
-from biomedclip.clip import create_model
+from biomedclip.clip import create_model , _MODEL_CKPT_PATHS
 from biomedclip.tokenizer import tokenize
-from biomedclip.adapter import CLIP_Inplanted
+from biomedclip.adapterv4 import CLIP_Inplanted
 from PIL import Image
 from sklearn.metrics import roc_auc_score, precision_recall_curve, pairwise
 from loss import FocalLoss, BinaryDiceLoss
@@ -28,16 +28,10 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-
-
-
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
 
 CLASS_INDEX = {'Brain':3, 'Liver':2, 'Retina_RESC':1, 'Retina_OCT2017':-1, 'Chest':-2, 'Histopathology':-3}
-
-# Global variables that will be accessible across cells
-global_vars = { }
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -48,14 +42,11 @@ def setup_seed(seed):
     torch.backends.cudnn.benchmark = False
 
 
-
 def main():
     parser = argparse.ArgumentParser(description='BiomedCLIP Testing')
     # General defaults
     parser.add_argument('--model_name', type=str, default='BiomedCLIP-PubMedBERT-ViT-B-16',
                         help="BiomedCLIP model version")    
-    #parser.add_argument('--text_encoder', type=str, default='microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract',
-    #                    help="Text encoder used for BiomedCLIP" )
 
     parser.add_argument('--pretrain', type=str, default='microsoft',
                             help="pretrained checkpoint source")
@@ -96,42 +87,26 @@ def main():
 
     setup_seed(args.seed)
 
-    
-    
     # fixed feature extractor
-    clip_model = create_model(model_name=args.model_name, img_size=args.img_size, device=device, pretrained=args.pretrain, require_pretrained=True )
-    
-    #print(clip_model)
+    clip_model = create_model(model_name=args.model_name, img_size=args.img_size, device=device, pretrained=args.pretrain, require_pretrained=True)
     clip_model.eval()
-    
-
 
     model = CLIP_Inplanted(clip_model=clip_model, features=args.features_list).to(device)
-
-    #print("here is the model", model)
+    model.eval()
 
     for name, param in model.named_parameters():
         param.requires_grad = True
 
+    # optimizer for only adapters
+    seg_optimizer = torch.optim.Adam(list(model.seg_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
+    det_optimizer = torch.optim.Adam(list(model.det_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
 
-    # ✅ NEW - ADD THIS:
-    seg_optimizer = AdamW(model.seg_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
-    det_optimizer = AdamW(model.det_adapters.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
-
-    #✅  SCHEDULER (Warmup + Cosine)
-    warmup_seg = LinearLR(seg_optimizer, start_factor=0.1, total_iters=5)
-    cosine_seg = CosineAnnealingLR(seg_optimizer, T_max=args.epoch-5, eta_min=1e-6)
-    seg_scheduler = SequentialLR(seg_optimizer, schedulers=[warmup_seg, cosine_seg], milestones=[5])
-
-    warmup_det = LinearLR(det_optimizer, start_factor=0.1, total_iters=5)
-    cosine_det = CosineAnnealingLR(det_optimizer, T_max=args.epoch-5, eta_min=1e-6)
-    det_scheduler = SequentialLR(det_optimizer, schedulers=[warmup_det, cosine_det], milestones=[5])
 
     # load test dataset
     kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
     test_dataset = MedDataset(args.data_path, args.obj, args.img_size, args.shot, args.iterate)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
-    
+
 
     # few-shot image augmentation
     augment_abnorm_img, augment_abnorm_mask = augment(test_dataset.fewshot_abnorm_img, test_dataset.fewshot_abnorm_mask)
@@ -146,7 +121,6 @@ def main():
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=True, **kwargs)
 
 
-
     # memory bank construction
     support_dataset = torch.utils.data.TensorDataset(augment_normal_img)
     support_loader = torch.utils.data.DataLoader(support_dataset, batch_size=1, shuffle=True, **kwargs)
@@ -158,25 +132,9 @@ def main():
     loss_bce = torch.nn.BCEWithLogitsLoss()
 
 
-    # Load vision projection from checkpoint
-    checkpoint_path = _MODEL_CKPT_PATHS[args.model_name]
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    
-    # Create projection layer
-    vision_proj = nn.Linear(768, 512, bias=False).to(device)
-    vision_proj.weight.data = checkpoint['visual.head.proj.weight'].to(device)
-    vision_proj.eval()
-    
-    # Freeze (optional but recommended)
-    for param in vision_proj.parameters():
-        param.requires_grad = False
-    
-    print(f"✅ Vision projection loaded: {vision_proj.weight.shape}")
-
-
     # text prompt
-    with torch.amp.autocast('cuda'), torch.no_grad():
-        text_features = encode_text_with_biomedclip_prompt_ensemble1(clip_model, REAL_NAME[args.obj], device)
+    with torch.cuda.amp.autocast(), torch.no_grad():
+        text_features = encode_text_with_prompt_ensemble(clip_model, REAL_NAME[args.obj], device)
 
     best_result = 0
 
@@ -186,60 +144,29 @@ def main():
         loss_list = []
         for (image, gt, label) in train_loader:
             image = image.to(device)
-            with torch.amp.autocast('cuda'):
+            with torch.cuda.amp.autocast():
                 _, seg_patch_tokens, det_patch_tokens = model(image)
                 seg_patch_tokens = [p[0, 1:, :] for p in seg_patch_tokens]
                 det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens]
                     
                 # det loss
                 det_loss = 0
-                image_label = label.to(device).float()
-                
+                image_label = label.to(device)
                 for layer in range(len(det_patch_tokens)):
-        
-                    raw_tokens=det_patch_tokens[layer]  #[196,768]
-                    #print(f"  Raw tokens shape: {raw_tokens.shape}")
-
-                    # ✅ CRITICAL: Project from 768 to 512 dimensions
-                    with torch.no_grad():  # Don't backprop through frozen projection
-                        projected_tokens = vision_proj(raw_tokens)  # [196, 768] -> [196, 512]
-                    projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
-                    #print(f"  After normalization, mean norm: {projected_tokens.norm(dim=-1).mean():.4f}")
-
-                    # ✅ NOW dimensions match: [196, 512] @ [512, 2] = [196, 2]
-                    anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0) 
-                    #print(f"  Anomaly map shape (pre-softmax): {anomaly_map.shape}")  # [1, 196, 2]
-
+                    det_patch_tokens[layer] = det_patch_tokens[layer] / det_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                    anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)    
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
-                    #print(f"  Anomaly map shape (post-softmax): {anomaly_map.shape}")  # [1, 196]
-
                     anomaly_score = torch.mean(anomaly_map, dim=-1)
-                    #print(f"  Anomaly score: {anomaly_score.item():.4f}")
                     det_loss += loss_bce(anomaly_score, image_label)
 
-
-                # Segmentation loss (add your code here)
                 if CLASS_INDEX[args.obj] > 0:
                     # pixel level
                     seg_loss = 0
                     mask = gt.squeeze(0).to(device)
                     mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
                     for layer in range(len(seg_patch_tokens)):
-                        raw_tokens = seg_patch_tokens[layer]  # [196, 768]
-
-                                            # ✅ CRITICAL: Project from 768 to 512 dimensions
-                        with torch.no_grad():  # Don't backprop through frozen projection
-                            projected_tokens = vision_proj(raw_tokens)  # [196, 768] -> [196, 512]
-
-                        projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
-                        #print(f"  After normalization, mean norm: {projected_tokens.norm(dim=-1).mean():.4f}")
-
-                        # ✅ NOW dimensions match: [196, 512] @ [512, 2] = [196, 2]
-                        anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0) 
-
-            
-
-                        
+                        seg_patch_tokens[layer] = seg_patch_tokens[layer] / seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                        anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
                         B, L, C = anomaly_map.shape
                         H = int(np.sqrt(L))
                         anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
@@ -266,10 +193,6 @@ def main():
                 loss_list.append(loss.item())
 
         print("Loss: ", np.mean(loss_list))
-        # ✅ ADD THESE LINES AT END OF EPOCH:
-        seg_scheduler.step()
-        det_scheduler.step()
-        print(f"  Seg LR: {seg_scheduler.get_last_lr()[0]:.8f}, Det LR: {det_scheduler.get_last_lr()[0]:.8f}")
 
 
         seg_features = []
@@ -312,15 +235,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
         image = image.to(device)
         mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
 
-        # Process each item in the batch separately
-        batch_size = image.shape[0]
-        
-        for i in range(batch_size):
-            single_image = image[i:i+1]  # Keep batch dimension
-            single_y = y[i]
-            single_mask = mask[i]
-
-        with torch.no_grad(), torch.amp.autocast('cuda'):
+        with torch.no_grad(), torch.cuda.amp.autocast():
             _, seg_patch_tokens, det_patch_tokens = model(image)
             seg_patch_tokens = [p[0, 1:, :] for p in seg_patch_tokens]
             det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens]
@@ -343,10 +258,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                 anomaly_maps = []
                 for layer in range(len(seg_patch_tokens)):
                     seg_patch_tokens[layer] /= seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                    vision_proj = model.visual_proj  # maps 768 -> 512
-                    proj_tokens = seg_patch_tokens[layer] @ vision_proj.weight.T
-                    anomaly_map = (proj_tokens @ text_features).unsqueeze(0)
-                    #anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
+                    anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
                     B, L, C = anomaly_map.shape
                     H = int(np.sqrt(L))
                     anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
@@ -376,26 +288,19 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                 anomaly_score = 0
                 for layer in range(len(det_patch_tokens)):
                     det_patch_tokens[layer] /= det_patch_tokens[layer].norm(dim=-1, keepdim=True)
-
-                    #projection layer 
-                    vision_proj = model.visual_proj  # maps 768 -> 512
-                    proj_tokens = det_patch_tokens[layer] @ vision_proj.weight.T
-                    anomaly_map = (proj_tokens @ text_features).unsqueeze(0)
-                    #anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)
+                    anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
                     anomaly_score += anomaly_map.mean()
                 det_image_scores_zero.append(anomaly_score.cpu().numpy())
 
             
-            # Append individual items
-            gt_mask_list.append(single_mask.cpu().detach().numpy())
-            gt_list.append(single_y.cpu().detach().numpy())
+            gt_mask_list.append(mask.squeeze().cpu().detach().numpy())
+            gt_list.extend(y.cpu().detach().numpy())
             
 
-    # Rest of the function remains the same
     gt_list = np.array(gt_list)
-    gt_mask_list = np.array(gt_mask_list)  # Now all masks have same shape
-    gt_mask_list = (gt_mask_list > 0).astype(np.int_)
+    gt_mask_list = np.asarray(gt_mask_list)
+    gt_mask_list = (gt_mask_list>0).astype(np.int_)
 
 
     if CLASS_INDEX[args.obj] > 0:
