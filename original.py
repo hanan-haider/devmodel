@@ -62,14 +62,34 @@ def main():
     clip_model.eval()
 
     model = CLIP_Inplanted(clip_model=clip_model, features=args.features_list).to(device)
-    model.eval()
+    #model.eval()
+                  # commenting the original lines to finetune all parameters
+    #for name, param in model.named_parameters():
+    #    param.requires_grad = True
 
-    for name, param in model.named_parameters():
-        param.requires_grad = True
+        # Freeze everything
+    for p in model.parameters():
+        p.requires_grad = False
+    
+    # Unfreeze adapters
+    for p in model.seg_adapters.parameters():
+        p.requires_grad = True
+    for p in model.det_adapters.parameters():
+        p.requires_grad = True
+    
+    # Optionally, unfreeze blending alphas if you have them
+    for p in [model.alpha_backbone, model.alpha_seg, model.alpha_det]:
+        p.requires_grad = True
 
     # optimizer for only adapters
-    seg_optimizer = torch.optim.Adam(list(model.seg_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
-    det_optimizer = torch.optim.Adam(list(model.det_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
+    #seg_optimizer = torch.optim.Adam(list(model.seg_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
+    #det_optimizer = torch.optim.Adam(list(model.det_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
+
+
+    learnable_params = [
+        p for p in model.parameters() if p.requires_grad
+    ]
+    optimizer = AdamW(learnable_params, lr=args.learning_rate, weight_decay=1e-4)
 
 
     # load test dataset
