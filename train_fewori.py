@@ -1,4 +1,4 @@
-#%%writefile /kaggle/working/devmodel/trainmodel.py
+#%%writefile /kaggle/working/devmodel/train_fewori.py
 import os
 import argparse
 import random
@@ -253,7 +253,7 @@ def main():
                 else:
                     #loss = torch.exp(-log_var_det) * det_loss + log_var_det
                     loss = det_loss
-                    loss.requires_grad_(True)
+                    #loss.requires_grad_(True)
                     det_optimizer.zero_grad()
                     loss.backward()
                     det_optimizer.step()
