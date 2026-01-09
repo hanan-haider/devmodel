@@ -213,11 +213,7 @@ def main():
                     raw_tokens = det_patch_tokens[layer]
                     projected_tokens = model.visual_proj(raw_tokens)
                     projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
-                    #det_patch_tokens[layer] = det_patch_tokens[layer] / det_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                    #anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0) 
-                                   #learnable temperature
-
-                    anomaly_map = ( 60 * projected_tokens @ text_features).unsqueeze(0)   
+                    anomaly_map = ( 100 * projected_tokens @ text_features).unsqueeze(0)   
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
                     anomaly_score = torch.mean(anomaly_map, dim=-1)
                     det_loss += loss_bce(anomaly_score, image_label)
@@ -333,7 +329,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                         height = int(np.sqrt(cos.shape[1]))
                         anomaly_map_few_shot = torch.min((1 - cos), 0)[0].reshape(1, 1, height, height)
                         anomaly_map_few_shot = F.interpolate(torch.tensor(anomaly_map_few_shot),
-                                                                size=args.img_size, mode='bilinear', align_corners=True)
+                                                            size=args.img_size, mode='bilinear', align_corners=True)
                         anomaly_maps_few_shot.append(anomaly_map_few_shot[0].cpu().numpy())
                     score_map_few = np.sum(anomaly_maps_few_shot, axis=0)
                     seg_score_map_few.append(score_map_few)
