@@ -187,13 +187,13 @@ def main():
     best_result = 0
 
     # --- ADD THIS BEFORE THE TRAINING LOOP ---
-    # Log variances for uncertainty weighting
-    #log_var_seg = torch.zeros(1, requires_grad=True, device=device)
-    #log_var_det = torch.zeros(1, requires_grad=True, device=device)
+    Log variances for uncertainty weighting
+    log_var_seg = torch.zeros(1, requires_grad=True, device=device)
+    log_var_det = torch.zeros(1, requires_grad=True, device=device)
 
     # Add these parameters to your optimizers so they are updated during training
-    #seg_optimizer.add_param_group({'params': [log_var_seg]})
-    #det_optimizer.add_param_group({'params': [log_var_det]})
+    seg_optimizer.add_param_group({'params': [log_var_seg]})
+    det_optimizer.add_param_group({'params': [log_var_det]})
 
     for epoch in range(args.epoch):
         print('epoch ', epoch, ':')
@@ -238,11 +238,11 @@ def main():
                         seg_loss += loss_focal(anomaly_map, mask)
                         seg_loss += loss_dice(anomaly_map[:, 1, :, :], mask)
 
-                    #weighted_seg_loss = torch.exp(-log_var_seg) * seg_loss + log_var_seg
-                    #weighted_det_loss = torch.exp(-log_var_det) * det_loss + log_var_det
+                    weighted_seg_loss = torch.exp(-log_var_seg) * seg_loss + log_var_seg
+                    weighted_det_loss = torch.exp(-log_var_det) * det_loss + log_var_det
                     
-                    #loss = weighted_seg_loss + weighted_det_loss
-                    loss = seg_loss + det_loss
+                    loss = weighted_seg_loss + weighted_det_loss
+                    #loss = seg_loss + det_loss
                     loss.requires_grad_(True)
                     seg_optimizer.zero_grad()
                     det_optimizer.zero_grad()
@@ -251,8 +251,8 @@ def main():
                     det_optimizer.step()
 
                 else:
-                    #loss = torch.exp(-log_var_det) * det_loss + log_var_det
-                    loss = det_loss
+                    loss = torch.exp(-log_var_det) * det_loss + log_var_det
+                    #loss = det_loss
                     #loss.requires_grad_(True)
                     det_optimizer.zero_grad()
                     loss.backward()
