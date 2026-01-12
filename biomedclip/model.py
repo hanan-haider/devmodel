@@ -30,21 +30,21 @@ class BioMedCLIPVisionCfg:
     embed_dim: int = 512                    
     mlp_ratio: float = 4.0
     ls_init_value: Optional[float] = None
-    patch_dropout: float = 0.0
+    patch_dropout: float = 0.1
     input_patchnorm: bool = False
-    global_average_pool: bool = False
-    attentional_pool: bool = False
+    global_average_pool: bool = True
+    attentional_pool: bool = True
     n_queries: int = 256
-    attn_pooler_heads: int = 8
+    attn_pooler_heads: int = 12
     timm_model_name: str = "vit_base_patch16_224"
     timm_model_pretrained: bool = False
     timm_pool: str = ''
     timm_proj: str = 'linear'
     timm_proj_bias: bool = False
     timm_drop: float = 0.0
-    timm_drop_path: Optional[float] = None
+    timm_drop_path: Optional[float] = 0.1
     output_tokens: bool = True
-    cast_dtype: Optional[str] = None  # 🆕 From BioMedCLIPCfg.cast_dtype
+    cast_dtype: Optional[str] = "float16"  # 🆕 From BioMedCLIPCfg.cast_dtype
 
 @dataclass
 class BioMedCLIPTextCfg:
@@ -54,7 +54,7 @@ class BioMedCLIPTextCfg:
     heads: int = 12
     layers: int = 12
     mlp_ratio: float = 4.0
-    ls_init_value: Optional[float] = None
+    ls_init_value: Optional[float] = 1e-5
     output_dim: int = 512
     embed_cls: bool = True
     hf_model_name: str = "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract"
