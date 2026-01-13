@@ -187,7 +187,7 @@ def main():
     best_result = 0
 
     # --- ADD THIS BEFORE THE TRAINING LOOP ---
-    Log variances for uncertainty weighting
+    #Log variances for uncertainty weighting
     log_var_seg = torch.zeros(1, requires_grad=True, device=device)
     log_var_det = torch.zeros(1, requires_grad=True, device=device)
 
@@ -251,7 +251,7 @@ def main():
                     det_optimizer.step()
 
                 else:
-                    loss = torch.exp(-log_var_det) * det_loss + log_var_det
+                    #loss = torch.exp(-log_var_det) * det_loss + log_var_det
                     #loss = det_loss
                     #loss.requires_grad_(True)
                     det_optimizer.zero_grad()

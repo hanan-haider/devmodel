@@ -129,13 +129,13 @@ def _build_text_tower(
         cast_dtype: Optional[torch.dtype] = None,
 
 ):
-    print("\n Building text tower...")
-    print("Here is the text config:", text_cfg,"\n")
+    #print("\n Building text tower...")
+    #print("Here is the text config:", text_cfg,"\n")
 
     if isinstance(text_cfg, dict):
         text_cfg = BioMedCLIPTextCfg(**text_cfg)
     
-    print("\nText config for text tower:", text_cfg)
+    #print("\nText config for text tower:", text_cfg)
 
     if text_cfg.hf_model_name:
         text = HFTextEncoder(
@@ -408,7 +408,7 @@ def build_model_from_biomedclip_state_dict(
         image_size=image_size,
 
     )
-    print("\nvision configs inside build model from state dict:", vision_cfg)
+    #print("\nvision configs inside build model from state dict:", vision_cfg)
 
     text_cfg = BioMedCLIPTextCfg(
         context_length=context_length,
