@@ -251,9 +251,9 @@ def main():
                     det_optimizer.step()
 
                 else:
-                    #loss = torch.exp(-log_var_det) * det_loss + log_var_det
+                    loss = torch.exp(-log_var_det) * det_loss + log_var_det
                     #loss = det_loss
-                    #loss.requires_grad_(True)
+                    loss.requires_grad_(True)
                     det_optimizer.zero_grad()
                     loss.backward()
                     det_optimizer.step()

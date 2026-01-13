@@ -195,6 +195,12 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
     for (image, y, mask) in tqdm(test_loader):
         image = image.to(device)
         mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
+                # Process each item in the batch separately
+        batch_size = image.shape[0]
+        
+        for i in range(batch_size):
+            single_image = image[i:i+1]  # Keep batch dimension
+ 
 
         with torch.no_grad(), torch.cuda.amp.autocast():
             _, seg_patch_tokens, det_patch_tokens = model(image)
@@ -265,8 +271,8 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                 det_image_scores_zero.append(anomaly_score.cpu().numpy())
 
             
-            gt_mask_list.append(mask.squeeze().cpu().detach().numpy())
-            gt_list.extend(y.cpu().detach().numpy())
+            gt_mask_list.append(mask[i].squeeze().cpu().detach().numpy())
+            gt_list.extend(y[i].cpu().detach().numpy())
             
 
     gt_list = np.array(gt_list)
