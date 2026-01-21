@@ -1,4 +1,4 @@
-%%writefile /kaggle/working/devmodel/train_fewori.py
+#%%writefile /kaggle/working/devmodel/train_fewori.py
 import os
 import argparse
 import random
@@ -169,8 +169,8 @@ def main():
 
 
 
-    # memory bank construction
-    support_dataset = torch.utils.data.TensorDataset(augment_normal_img)
+    # memory bank construction                 #mvfa use the augment_normal_img 
+    support_dataset = torch.utils.data.TensorDataset(test_dataset.fewshot_norm_img)
     support_loader = torch.utils.data.DataLoader(support_dataset, batch_size=1, shuffle=True, **kwargs)
 
 
@@ -186,14 +186,6 @@ def main():
 
     best_result = 0
 
-    # --- ADD THIS BEFORE THE TRAINING LOOP ---
-    # Log variances for uncertainty weighting
-    #log_var_seg = torch.zeros(1, requires_grad=True, device=device)
-    #log_var_det = torch.zeros(1, requires_grad=True, device=device)
-
-    # Add these parameters to your optimizers so they are updated during training
-    #seg_optimizer.add_param_group({'params': [log_var_seg]})
-    #det_optimizer.add_param_group({'params': [log_var_det]})
 
     for epoch in range(args.epoch):
         print('epoch ', epoch, ':')
@@ -211,13 +203,15 @@ def main():
                 image_label = label.to(device)
                 for layer in range(len(det_patch_tokens)):
                     raw_tokens = det_patch_tokens[layer]
+                    raw_tokens = raw_tokens / raw_tokens.norm(dim=-1, keepdim=True)
                     projected_tokens = model.visual_proj(raw_tokens)
+                    
                     projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
                     #det_patch_tokens[layer] = det_patch_tokens[layer] / det_patch_tokens[layer].norm(dim=-1, keepdim=True)
                     #anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0) 
                                    #learnable temperature
 
-                    anomaly_map = ( 60 * projected_tokens @ text_features).unsqueeze(0)   
+                    anomaly_map = ( 100 * projected_tokens @ text_features).unsqueeze(0)   
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
                     anomaly_score = torch.mean(anomaly_map, dim=-1)
                     det_loss += loss_bce(anomaly_score, image_label)
@@ -229,6 +223,7 @@ def main():
                     mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
                     for layer in range(len(seg_patch_tokens)):
                         raw_tokens = seg_patch_tokens[layer]
+                        raw_tokens = raw_tokens / raw_tokens.norm(dim=-1, keepdim=True)
                         projected_tokens = model.visual_proj(raw_tokens)
                         projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
                         #seg_patch_tokens[layer] = seg_patch_tokens[layer] / seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
@@ -242,10 +237,7 @@ def main():
                         seg_loss += loss_focal(anomaly_map, mask)
                         seg_loss += loss_dice(anomaly_map[:, 1, :, :], mask)
 
-                    #weighted_seg_loss = torch.exp(-log_var_seg) * seg_loss + log_var_seg
-                    #weighted_det_loss = torch.exp(-log_var_det) * det_loss + log_var_det
-                    
-                    #loss = weighted_seg_loss + weighted_det_loss
+     
                     loss = seg_loss + det_loss
                     loss.requires_grad_(True)
                     seg_optimizer.zero_grad()
@@ -255,7 +247,7 @@ def main():
                     det_optimizer.step()
 
                 else:
-                    #loss = torch.exp(-log_var_det) * det_loss + log_var_det
+               
                     loss = det_loss
                     loss.requires_grad_(True)
                     det_optimizer.zero_grad()
@@ -343,6 +335,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                     for layer in range(len(seg_patch_tokens)):
                         # 1. Get raw visual tokens from the adapter: [196, 768]
                         raw_tokens = seg_patch_tokens[layer]
+                        raw_tokens = raw_tokens / raw_tokens.norm(dim=-1, keepdim=True)
                         # 2. Project the visual tokens using the visual projection layer
                         # BioMedCLIP requires this projection to align with text
                         projected_tokens = model.visual_proj(raw_tokens)
@@ -379,6 +372,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                     anomaly_score = 0
                     for layer in range(len(det_patch_tokens)):
                         raw_tokens = det_patch_tokens[layer]
+                        raw_tokens = raw_tokens / raw_tokens.norm(dim=-1, keepdim=True)
                         projected_tokens = model.visual_proj(raw_tokens)
                         projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
                         anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0)
