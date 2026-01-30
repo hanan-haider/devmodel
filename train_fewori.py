@@ -169,8 +169,8 @@ def main():
 
 
 
-    # memory bank construction                 #mvfa use the augment_normal_img 
-    support_dataset = torch.utils.data.TensorDataset(test_dataset.fewshot_norm_img)
+    # memory bank construction                
+    support_dataset = torch.utils.data.TensorDataset(augment_normal_img)
     support_loader = torch.utils.data.DataLoader(support_dataset, batch_size=1, shuffle=True, **kwargs)
 
 

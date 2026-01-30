@@ -148,8 +148,8 @@ def main():
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=True, **kwargs)
 
 
-    # memory bank construction
-    support_dataset = torch.utils.data.TensorDataset(augment_normal_img)
+    # memory bank construction                       #mvfa uses this  augment_normal_img
+    support_dataset = torch.utils.data.TensorDataset(test_dataset.fewshot_norm_img)
     support_loader = torch.utils.data.DataLoader(support_dataset, batch_size=1, shuffle=True, **kwargs)
 
 
@@ -219,6 +219,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                 anomaly_maps = []
                 for layer in range(len(seg_patch_tokens)):
                     raw_tokens = seg_patch_tokens[layer]
+                    raw_tokens = raw_tokens / raw_tokens.norm(dim=-1, keepdim=True)
                     # 2. Project the visual tokens using the visual projection layer
                     # BioMedCLIP requires this projection to align with text
                     projected_tokens = model.visual_proj(raw_tokens)
@@ -255,6 +256,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                 anomaly_score = 0
                 for layer in range(len(det_patch_tokens)):
                     raw_tokens = det_patch_tokens[layer]
+                    raw_tokens = raw_tokens / raw_tokens.norm(dim=-1, keepdim=True)
                     projected_tokens = model.visual_proj(raw_tokens)
                     projected_tokens = projected_tokens / projected_tokens.norm(dim=-1, keepdim=True)
                     anomaly_map = (100.0 * projected_tokens @ text_features).unsqueeze(0)
