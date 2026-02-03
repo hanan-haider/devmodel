@@ -12,7 +12,7 @@ from scipy.ndimage import gaussian_filter
 from dataset.medical_few import MedDataset
 from biomedclip.clip import create_model
 from biomedclip.tokenizer import tokenize
-from biomedclip.adapter import CLIP_Inplanted
+from biomedclip.adapterv4 import CLIP_Inplanted
 from PIL import Image
 from sklearn.metrics import roc_auc_score, precision_recall_curve, pairwise
 from loss import FocalLoss, BinaryDiceLoss
@@ -112,9 +112,27 @@ def main():
     for name, param in model.named_parameters():
         param.requires_grad = True
 
-    # optimizer for only adapters
-    seg_optimizer = torch.optim.Adam(list(model.seg_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
-    det_optimizer = torch.optim.Adam(list(model.det_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
+    # In main():
+    seg_optimizer = torch.optim.Adam(
+        list(model.seg_adapters.parameters()), 
+        lr=args.learning_rate, 
+        betas=(0.9, 0.999),  # More stable than (0.5, 0.999)
+        weight_decay=1e-5    # Add slight regularization
+    )
+    det_optimizer = torch.optim.Adam(
+        list(model.det_adapters.parameters()), 
+        lr=args.learning_rate, 
+        betas=(0.9, 0.999),
+        weight_decay=1e-5
+    )
+    
+    # Add schedulers
+    seg_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        seg_optimizer, T_max=30, eta_min=1e-7
+    )
+    det_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        det_optimizer, T_max=30, eta_min=1e-7
+    )
 
 
     # load test dataset
@@ -151,7 +169,7 @@ def main():
 
     # text prompt
     with torch.cuda.amp.autocast(), torch.no_grad():
-        text_features = encode_text_with_biomedclip_prompt_ensemble(clip_model, REAL_NAME[args.obj], device)
+        text_features =  encode_text_with_biomedclip_prompt_ensemble1(clip_model, REAL_NAME[args.obj], device)
 
     best_result = 0
 
