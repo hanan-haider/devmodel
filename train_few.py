@@ -82,6 +82,8 @@ def main():
     parser.add_argument('--seed', type=int, default=111)
     parser.add_argument('--shot', type=int, default=4)
     parser.add_argument('--iterate', type=int, default=0)
+    parser.add_argument('--weight_decay', type=float, default=1e-4, help='Weight decay for optimizer regularization')
+
 
     #args = parser.parse_args()
 #printing the arguments 
@@ -107,32 +109,69 @@ def main():
     model = CLIP_Inplanted(clip_model=clip_model, features=args.features_list).to(device)
     model.eval()
 
-    for name, param in model.named_parameters():
-        param.requires_grad = True
-    seg_optimizer = torch.optim.Adam(
-        list(model.seg_adapters.parameters()), 
-        lr=args.learning_rate, 
-        betas=(0.9, 0.999),
-        weight_decay=1e-6  # Slightly lower than 1e-5
+    # Set requires_grad properly
+    for p in model.parameters():
+        p.requires_grad = False
+    for p in model.seg_adapters.parameters():
+        p.requires_grad = True
+    for p in model.det_adapters.parameters():
+        p.requires_grad = True
+    model.alpha_backbone.requires_grad = True
+    model.alpha_seg.requires_grad = True
+    model.alpha_det.requires_grad = True
+
+    # Optimizers with differential learning rates
+    seg_params = [
+        {'params': model.seg_adapters.parameters(), 'lr': args.learning_rate},
+        {'params': [model.alpha_seg], 'lr': args.learning_rate * 0.5},
+        {'params': [model.alpha_backbone], 'lr': args.learning_rate * 0.5},
+    ]
+    det_params = [
+        {'params': model.det_adapters.parameters(), 'lr': args.learning_rate},
+        {'params': [model.alpha_det], 'lr': args.learning_rate * 0.5},
+        {'params': [model.alpha_backbone], 'lr': args.learning_rate * 0.5},
+    ]
+
+    seg_optimizer = AdamW(seg_params, betas=(0.9, 0.999), weight_decay=args.weight_decay)
+    det_optimizer = AdamW(det_params, betas=(0.9, 0.999), weight_decay=args.weight_decay)
+
+    # Parameter count
+    seg_adapter_params = sum(p.numel() for p in model.seg_adapters.parameters())
+    det_adapter_params = sum(p.numel() for p in model.det_adapters.parameters())
+    alpha_params = model.alpha_backbone.numel() + model.alpha_seg.numel() + model.alpha_det.numel()
+    print(f"\nSegmentation adapter parameters: {seg_adapter_params:,}")
+    print(f"Detection adapter parameters:    {det_adapter_params:,}")
+    print(f"Alpha blending parameters:       {alpha_params:,}")
+    print(f"Total trainable:                 {seg_adapter_params + det_adapter_params + alpha_params:,}")
+
+    # Enhanced scheduler
+    warmup_epochs = 8
+    total_epochs = args.epoch
+
+    warmup_seg = LinearLR(seg_optimizer, start_factor=0.01, total_iters=warmup_epochs)
+    cosine_seg = CosineAnnealingLR(
+        seg_optimizer,
+        T_max=total_epochs - warmup_epochs,
+        eta_min=args.learning_rate * 0.001
     )
-    det_optimizer = torch.optim.Adam(
-        list(model.det_adapters.parameters()), 
-        lr=args.learning_rate, 
-        betas=(0.9, 0.999),
-        weight_decay=1e-6
+    seg_scheduler = SequentialLR(
+        seg_optimizer,
+        schedulers=[warmup_seg, cosine_seg],
+        milestones=[warmup_epochs]
     )
-    
-    # Modified schedulers:
-    seg_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        seg_optimizer, 
-        T_max=20,        # Match expected convergence time
-        eta_min=2e-07   # 10% of starting LR, not 100× smaller
+
+    warmup_det = LinearLR(det_optimizer, start_factor=0.01, total_iters=warmup_epochs)
+    cosine_det = CosineAnnealingLR(
+        det_optimizer,
+        T_max=total_epochs - warmup_epochs,
+        eta_min=args.learning_rate * 0.001
     )
-    det_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        det_optimizer, 
-        T_max=20, 
-        eta_min=5e-07
+    det_scheduler = SequentialLR(
+        det_optimizer,
+        schedulers=[warmup_det, cosine_det],
+        milestones=[warmup_epochs]
     )
+
     # load test dataset
     kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
     test_dataset = MedDataset(args.data_path, args.obj, args.img_size, args.shot, args.iterate)
