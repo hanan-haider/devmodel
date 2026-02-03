@@ -1,3 +1,5 @@
+#%writefile /kaggle/working/devmodel/train_few.py
+
 import os
 import argparse
 import random
@@ -108,7 +110,6 @@ def main():
     for name, param in model.named_parameters():
         param.requires_grad = True
 
-
     # In main():
     seg_optimizer = torch.optim.Adam(
         list(model.seg_adapters.parameters()), 
@@ -130,7 +131,6 @@ def main():
     det_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         det_optimizer, T_max=30, eta_min=1e-7
     )
-
 
     # load test dataset
     kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
@@ -258,7 +258,6 @@ def main():
                             ckp_path)
           
 
-
 def test(args, model, test_loader, text_features, seg_mem_features, det_mem_features):
     gt_list = []
     gt_mask_list = []
@@ -267,104 +266,106 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
     det_image_scores_few = []
     
     seg_score_map_zero = []
-    seg_score_map_few= []
+    seg_score_map_few = []
 
-
-    #  PROJECT MEMORY BANK ONCE
+    # ✅ PROJECT MEMORY BANK ONCE
     seg_mem_features = project_tokens(model, seg_mem_features)
     det_mem_features = project_tokens(model, det_mem_features)
 
     for (image, y, mask) in tqdm(test_loader):
         image = image.to(device)
-        mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
+        batch_size = image.shape[0]  # ✅ Get actual batch size
+        
+        # Process masks
+        mask[mask > 0.5] = 1
+        mask[mask <= 0.5] = 0
 
         with torch.no_grad(), torch.cuda.amp.autocast():
             _, seg_patch_tokens, det_patch_tokens = model(image)
             
-            seg_patch_tokens = [p[0, 1:, :] for p in seg_patch_tokens]
-            det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens]
+            # ✅ Process EACH image in the batch separately
+            for i in range(batch_size):
+                # Extract tokens for this single image
+                seg_tokens_single = [p[i, 1:, :] for p in seg_patch_tokens]
+                det_tokens_single = [p[i, 1:, :] for p in det_patch_tokens]
 
+                # Project tokens
+                seg_tokens_single = project_tokens(model, seg_tokens_single)
+                det_tokens_single = project_tokens(model, det_tokens_single)
 
-            # ✅ PROJECT ONCE HERE (768 -> 512)
-            seg_patch_tokens = project_tokens(model, seg_patch_tokens)
-            det_patch_tokens = project_tokens(model, det_patch_tokens)
+                if CLASS_INDEX[args.obj] > 0:
+                    # === Few-shot segmentation ===
+                    anomaly_maps_few_shot = []
+                    for idx, p in enumerate(seg_tokens_single):
+                        cos = cos_sim(seg_mem_features[idx], p)
+                        height = int(np.sqrt(cos.shape[1]))
+                        anomaly_map_few_shot = torch.min((1 - cos), 0)[0].reshape(1, 1, height, height)
+                        anomaly_map_few_shot = F.interpolate(
+                            anomaly_map_few_shot,
+                            size=args.img_size, mode='bilinear', align_corners=True
+                        )
+                        anomaly_maps_few_shot.append(anomaly_map_few_shot[0].cpu().numpy())
+                    score_map_few = np.sum(anomaly_maps_few_shot, axis=0)
+                    seg_score_map_few.append(score_map_few)
 
+                    # === Zero-shot segmentation ===
+                    anomaly_maps = []
+                    for layer in range(len(seg_tokens_single)):
+                        tokens_norm = seg_tokens_single[layer] / seg_tokens_single[layer].norm(dim=-1, keepdim=True)
+                        anomaly_map = (100.0 * tokens_norm @ text_features).unsqueeze(0)
+                        B, L, C = anomaly_map.shape
+                        H = int(np.sqrt(L))
+                        anomaly_map = F.interpolate(
+                            anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
+                            size=args.img_size, mode='bilinear', align_corners=True
+                        )
+                        anomaly_map = torch.softmax(anomaly_map, dim=1)[:, 1, :, :]
+                        anomaly_maps.append(anomaly_map.cpu().numpy())
+                    score_map_zero = np.sum(anomaly_maps, axis=0)
+                    seg_score_map_zero.append(score_map_zero)
 
-                            
-    
+                else:
+                    # === Few-shot detection ===
+                    anomaly_maps_few_shot = []
+                    for idx, p in enumerate(det_tokens_single):
+                        cos = cos_sim(det_mem_features[idx], p)
+                        height = int(np.sqrt(cos.shape[1]))
+                        anomaly_map_few_shot = torch.min((1 - cos), 0)[0].reshape(1, 1, height, height)
+                        anomaly_map_few_shot = F.interpolate(
+                            anomaly_map_few_shot,
+                            size=args.img_size, mode='bilinear', align_corners=True
+                        )
+                        anomaly_maps_few_shot.append(anomaly_map_few_shot[0].cpu().numpy())
+                    anomaly_map_few_shot = np.sum(anomaly_maps_few_shot, axis=0)
+                    score_few_det = anomaly_map_few_shot.mean()
+                    det_image_scores_few.append(score_few_det)
 
-    
+                    # === Zero-shot detection ===
+                    anomaly_score = 0
+                    for layer in range(len(det_tokens_single)):
+                        tokens_norm = det_tokens_single[layer] / det_tokens_single[layer].norm(dim=-1, keepdim=True)
+                        anomaly_map = (100.0 * tokens_norm @ text_features).unsqueeze(0)
+                        anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
+                        anomaly_score += anomaly_map.mean()
+                    det_image_scores_zero.append(anomaly_score.cpu().numpy())
 
-            if CLASS_INDEX[args.obj] > 0:
-
-                # few-shot, seg head
-                anomaly_maps_few_shot = []
-                for idx, p in enumerate(seg_patch_tokens):
-                    cos = cos_sim(seg_mem_features[idx], p)
-                    height = int(np.sqrt(cos.shape[1]))
-                    anomaly_map_few_shot = torch.min((1 - cos), 0)[0].reshape(1, 1, height, height)
-                    anomaly_map_few_shot = F.interpolate(torch.tensor(anomaly_map_few_shot),
-                                                            size=args.img_size, mode='bilinear', align_corners=True)
-                    anomaly_maps_few_shot.append(anomaly_map_few_shot[0].cpu().numpy())
-                score_map_few = np.sum(anomaly_maps_few_shot, axis=0)
-                seg_score_map_few.append(score_map_few)
-
-                # zero-shot, seg head
-                anomaly_maps = []
-                for layer in range(len(seg_patch_tokens)):
-                    seg_patch_tokens[layer] /= seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                    anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
-                    B, L, C = anomaly_map.shape
-                    H = int(np.sqrt(L))
-                    anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
-                                                size=args.img_size, mode='bilinear', align_corners=True)
-                    anomaly_map = torch.softmax(anomaly_map, dim=1)[:, 1, :, :]
-                    anomaly_maps.append(anomaly_map.cpu().numpy())
-                score_map_zero = np.sum(anomaly_maps, axis=0)
-                seg_score_map_zero.append(score_map_zero)
-                
-
-
-            else:
-                # few-shot, det head
-                anomaly_maps_few_shot = []
-                for idx, p in enumerate(det_patch_tokens):
-                    cos = cos_sim(det_mem_features[idx], p)
-                    height = int(np.sqrt(cos.shape[1]))
-                    anomaly_map_few_shot = torch.min((1 - cos), 0)[0].reshape(1, 1, height, height)
-                    anomaly_map_few_shot = F.interpolate(torch.tensor(anomaly_map_few_shot),
-                                                            size=args.img_size, mode='bilinear', align_corners=True)
-                    anomaly_maps_few_shot.append(anomaly_map_few_shot[0].cpu().numpy())
-                anomaly_map_few_shot = np.sum(anomaly_maps_few_shot, axis=0)
-                score_few_det = anomaly_map_few_shot.mean()
-                det_image_scores_few.append(score_few_det)
-
-                # zero-shot, det head
-                anomaly_score = 0
-                for layer in range(len(det_patch_tokens)):
-                    det_patch_tokens[layer] /= det_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                    anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)
-                    anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
-                    anomaly_score += anomaly_map.mean()
-                det_image_scores_zero.append(anomaly_score.cpu().numpy())
-
+                # ✅ Append mask for THIS image only
+                gt_mask_list.append(mask[i].squeeze().cpu().detach().numpy())
             
-            gt_mask_list.append(mask.squeeze().cpu().detach().numpy())
+            # ✅ Extend gt_list with batch labels
             gt_list.extend(y.cpu().detach().numpy())
-            
 
+    # Convert to arrays
     gt_list = np.array(gt_list)
     gt_mask_list = np.array(gt_mask_list)
-    gt_mask_list = (gt_mask_list>0).astype(np.int_)
-
+    gt_mask_list = (gt_mask_list > 0).astype(np.int_)
 
     if CLASS_INDEX[args.obj] > 0:
-
         seg_score_map_zero = np.array(seg_score_map_zero)
         seg_score_map_few = np.array(seg_score_map_few)
 
-        seg_score_map_zero = (seg_score_map_zero - seg_score_map_zero.min()) / (seg_score_map_zero.max() - seg_score_map_zero.min())
-        seg_score_map_few = (seg_score_map_few - seg_score_map_few.min()) / (seg_score_map_few.max() - seg_score_map_few.min())
+        seg_score_map_zero = (seg_score_map_zero - seg_score_map_zero.min()) / (seg_score_map_zero.max() - seg_score_map_zero.min() + 1e-8)
+        seg_score_map_few = (seg_score_map_few - seg_score_map_few.min()) / (seg_score_map_few.max() - seg_score_map_few.min() + 1e-8)
     
         segment_scores = 0.5 * seg_score_map_zero + 0.5 * seg_score_map_few
         seg_roc_auc = roc_auc_score(gt_mask_list.flatten(), segment_scores.flatten())
@@ -377,21 +378,17 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
         return seg_roc_auc + roc_auc_im
 
     else:
-
         det_image_scores_zero = np.array(det_image_scores_zero)
         det_image_scores_few = np.array(det_image_scores_few)
 
-        det_image_scores_zero = (det_image_scores_zero - det_image_scores_zero.min()) / (det_image_scores_zero.max() - det_image_scores_zero.min())
-        det_image_scores_few = (det_image_scores_few - det_image_scores_few.min()) / (det_image_scores_few.max() - det_image_scores_few.min())
+        det_image_scores_zero = (det_image_scores_zero - det_image_scores_zero.min()) / (det_image_scores_zero.max() - det_image_scores_zero.min() + 1e-8)
+        det_image_scores_few = (det_image_scores_few - det_image_scores_few.min()) / (det_image_scores_few.max() - det_image_scores_few.min() + 1e-8)
     
         image_scores = 0.5 * det_image_scores_zero + 0.5 * det_image_scores_few
         img_roc_auc_det = roc_auc_score(gt_list, image_scores)
         print(f'{args.obj} AUC : {round(img_roc_auc_det,4)}')
 
         return img_roc_auc_det
-
-
-
 if __name__ == '__main__':
     main()
 
