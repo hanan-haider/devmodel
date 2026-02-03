@@ -254,6 +254,9 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
 
     for (image, y, mask) in tqdm(test_loader):
         image = image.to(device)
+        batch_size = image.shape[0]
+        mask = mask.to(device)
+        
         mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
 
         with torch.no_grad(), torch.cuda.amp.autocast():
