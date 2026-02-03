@@ -262,10 +262,13 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
             det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens]
 
 
+            # ✅ PROJECT ONCE HERE (768 -> 512)
+            seg_patch_tokens = project_tokens(model, seg_patch_tokens)
+            det_patch_tokens = project_tokens(model, det_patch_tokens)
+
+
                             
-                # ✅ PROJECT TOKENS ONCE
-            seg_tokens_single = project_tokens(model, seg_tokens_single)
-            det_tokens_single = project_tokens(model, det_tokens_single)
+    
 
     
 
