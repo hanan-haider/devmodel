@@ -108,9 +108,28 @@ def main():
     for name, param in model.named_parameters():
         param.requires_grad = True
 
-    # optimizer for only adapters
-    seg_optimizer = torch.optim.Adam(list(model.seg_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
-    det_optimizer = torch.optim.Adam(list(model.det_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
+
+    # In main():
+    seg_optimizer = torch.optim.Adam(
+        list(model.seg_adapters.parameters()), 
+        lr=args.learning_rate, 
+        betas=(0.9, 0.999),  # More stable than (0.5, 0.999)
+        weight_decay=1e-5    # Add slight regularization
+    )
+    det_optimizer = torch.optim.Adam(
+        list(model.det_adapters.parameters()), 
+        lr=args.learning_rate, 
+        betas=(0.9, 0.999),
+        weight_decay=1e-5
+    )
+    
+    # Add schedulers
+    seg_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        seg_optimizer, T_max=30, eta_min=1e-7
+    )
+    det_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        det_optimizer, T_max=30, eta_min=1e-7
+    )
 
 
     # load test dataset
@@ -209,6 +228,9 @@ def main():
                 loss_list.append(loss.item())
 
         print("Loss: ", np.mean(loss_list))
+        # At end of each epoch (after optimizer.step()):
+        seg_scheduler.step()
+        det_scheduler.step()
 
 
         seg_features = []

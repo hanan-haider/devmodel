@@ -18,7 +18,7 @@ class ClipAdapter(nn.Module):
             nn.Dropout(dropout),
 
             nn.Linear(bottleneck, c_in, bias=False),
-            nn.Dropout(dropout),
+            #nn.Dropout(dropout),
         )
         self.gate = nn.Parameter(torch.tensor(0.1))  # ADD THIS
         
