@@ -249,8 +249,8 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
 
 
     #  PROJECT MEMORY BANK ONCE
-    seg_mem_proj = project_tokens(model, seg_mem_features)
-    det_mem_proj = project_tokens(model, det_mem_features)
+    seg_mem_features = project_tokens(model, seg_mem_features)
+    det_mem_features = project_tokens(model, det_mem_features)
 
     for (image, y, mask) in tqdm(test_loader):
         image = image.to(device)
