@@ -35,6 +35,15 @@ CLASS_INDEX = {'Brain':3, 'Liver':2, 'Retina_RESC':1, 'Retina_OCT2017':-1, 'Ches
 # Global variables that will be accessible across cells
 global_vars = { }
 
+def project_tokens(model, tokens):
+    """
+    Project tokens from 768-dim (bottleneck output) to 512-dim (text space).
+    This should be called ONCE after getting tokens from model.
+    """
+    if model.visual_proj is not None:
+        return [model.visual_proj(t) for t in tokens]
+    return tokens
+
 def setup_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
