@@ -256,14 +256,14 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
         image = image.to(device)
         batch_size = image.shape[0]
         mask = mask.to(device)
-        
+
         mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
 
         with torch.no_grad(), torch.cuda.amp.autocast():
             _, seg_patch_tokens, det_patch_tokens = model(image)
             for i in range(batch_size):
-                seg_patch_tokens = [p[0, 1:, :] for p in seg_patch_tokens]
-                det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens]
+                seg_patch_tokens = [p[i, 1:, :] for p in seg_patch_tokens]
+                det_patch_tokens = [p[i, 1:, :] for p in det_patch_tokens]
     
     
                 # ✅ PROJECT ONCE HERE (768 -> 512)
