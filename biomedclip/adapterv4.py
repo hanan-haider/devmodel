@@ -120,8 +120,6 @@ class CLIP_Inplanted(nn.Module):
         pooled = x[:, 0]  # CLS token
 
         if self.visual_proj is not None:
-            pooled = self.visual_proj(pooled)
-            seg_patch_tokens=self.visual_proj(seg_patch_tokens)
-            det_patch_tokens=self.visual_proj(det_patch_tokens)     
+            pooled = self.visual_proj(pooled)    
 
         return pooled, seg_patch_tokens, det_patch_tokens

@@ -159,6 +159,11 @@ def main():
                 _, seg_patch_tokens, det_patch_tokens = model(image)
                 seg_patch_tokens = [p[0, 1:, :] for p in seg_patch_tokens]
                 det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens]
+
+
+                # ✅ PROJECT ONCE HERE (768 -> 512)
+                seg_patch_tokens = project_tokens(model, seg_patch_tokens)
+                det_patch_tokens = project_tokens(model, det_patch_tokens)
                     
                 # det loss
                 det_loss = 0
@@ -242,6 +247,11 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
     seg_score_map_zero = []
     seg_score_map_few= []
 
+
+    #  PROJECT MEMORY BANK ONCE
+    seg_mem_proj = project_tokens(model, seg_mem_features)
+    det_mem_proj = project_tokens(model, det_mem_features)
+
     for (image, y, mask) in tqdm(test_loader):
         image = image.to(device)
         mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
@@ -250,6 +260,14 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
             _, seg_patch_tokens, det_patch_tokens = model(image)
             seg_patch_tokens = [p[0, 1:, :] for p in seg_patch_tokens]
             det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens]
+
+
+                            
+                # ✅ PROJECT TOKENS ONCE
+            seg_tokens_single = project_tokens(model, seg_tokens_single)
+            det_tokens_single = project_tokens(model, det_tokens_single)
+
+    
 
             if CLASS_INDEX[args.obj] > 0:
 
