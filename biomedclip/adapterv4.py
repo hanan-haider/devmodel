@@ -3,7 +3,7 @@ from torch import nn
 
 # Replace your ClipAdapter class with:
 class ClipAdapter(nn.Module):
-    def __init__(self, c_in: int, bottleneck: int = 768, dropout: float = 0.01):
+    def __init__(self, c_in: int, bottleneck: int = 256, dropout: float = 0.1):
         super().__init__()
         self.ln = nn.LayerNorm(c_in)
         self.mlp = nn.Sequential(
@@ -20,7 +20,7 @@ class ClipAdapter(nn.Module):
             nn.Linear(bottleneck, c_in, bias=False),
             #nn.Dropout(dropout),
         )
-        self.gate = nn.Parameter(torch.tensor(0.1))  # ADD THIS
+        self.gate = nn.Parameter(torch.tensor(0.05))  # ADD THIS
         
     def forward(self, x):
         residual = x
