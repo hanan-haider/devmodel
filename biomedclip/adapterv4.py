@@ -8,7 +8,7 @@ class ClipAdapter(nn.Module):
         self.ln = nn.LayerNorm(c_in)
         self.mlp = nn.Sequential(
             nn.Linear(c_in, bottleneck, bias=False),
-            #nn.LayerNorm(bottleneck),  # ADD THIS
+            nn.LayerNorm(bottleneck),  # ADD THIS
             nn.GELU(),  # CHANGE FROM LeakyReLU
             nn.Dropout(dropout),  # ADD THIS
             

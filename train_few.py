@@ -113,13 +113,13 @@ def main():
         list(model.seg_adapters.parameters()), 
         lr=args.learning_rate, 
         betas=(0.9, 0.999),
-        weight_decay=5e-6  # Slightly lower than 1e-5
+        weight_decay=1e-4  # Slightly lower than 1e-5
     )
     det_optimizer = torch.optim.Adam(
         list(model.det_adapters.parameters()), 
         lr=args.learning_rate, 
         betas=(0.9, 0.999),
-        weight_decay=5e-6
+        weight_decay=1e-4
     )
     
     # Modified schedulers:
