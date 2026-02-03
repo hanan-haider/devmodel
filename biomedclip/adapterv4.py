@@ -3,7 +3,7 @@ from torch import nn
 
 # Replace your ClipAdapter class with:
 class ClipAdapter(nn.Module):
-    def __init__(self, c_in: int, bottleneck: int = 786, dropout: float = 0.1):
+    def __init__(self, c_in: int, bottleneck: int = 768, dropout: float = 0.1):
         super().__init__()
         self.ln = nn.LayerNorm(c_in)
         self.mlp = nn.Sequential(
@@ -38,7 +38,7 @@ class CLIP_Inplanted(nn.Module):
         self,
         clip_model,
         features,           # layer indices e.g. [4, 8, 10, 12]
-        bottleneck=256,
+        bottleneck=768,
         dropout=0.1,
     ):
         super().__init__()
