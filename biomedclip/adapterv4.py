@@ -121,7 +121,7 @@ class CLIP_Inplanted(nn.Module):
 
         if self.visual_proj is not None:
             pooled = self.visual_proj(pooled)
-            seg_patch_tokens=self.visual_proj(seg_patch_tokens)
-            det_patch_tokens=self.visual_proj(det_patch_tokens)     
+            #seg_patch_tokens=self.visual_proj(seg_patch_tokens)
+            #det_patch_tokens=self.visual_proj(det_patch_tokens)     
 
         return pooled, seg_patch_tokens, det_patch_tokens

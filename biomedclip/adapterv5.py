@@ -1,46 +1,36 @@
-#from claude code 
-#%%writefile /kaggle/working/devmodel/biomedclip/adapter.py
 import torch
 from torch import nn
-import torch.nn.functional as F
 
+# OPTIMIZED ADAPTER - Simpler, more stable
 class ClipAdapter(nn.Module):
-    def __init__(self, c_in: int, bottleneck: int = 256, dropout: float = 0.1):
+    def __init__(self, c_in: int, bottleneck: int = 192, dropout: float = 0.15):
         super().__init__()
-        self.ln = nn.LayerNorm(c_in)
+        self.ln_pre = nn.LayerNorm(c_in)
         
-        # Enhanced bottleneck MLP
-        self.mlp = nn.Sequential(
-            nn.Linear(c_in, bottleneck, bias=True),  # Added bias
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(bottleneck, c_in, bias=True),  # Added bias
-            nn.Dropout(dropout),
-        )
+        # Single bottleneck path (reduced from 3 layers to 2)
+        self.down = nn.Linear(c_in, bottleneck, bias=False)
+        self.ln_mid = nn.LayerNorm(bottleneck)
+        self.act = nn.GELU()
+        self.dropout = nn.Dropout(dropout)
+        self.up = nn.Linear(bottleneck, c_in, bias=False)
         
-        # Better initialization for gating - start with small but non-zero value
-        self.gate = nn.Parameter(torch.ones(1) * 0.1)
+        # Fixed residual scale (no learnable gate)
+        self.scale = 0.1
         
-        # Initialize weights properly
-        self._init_weights()
-    
-    def _init_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-
     def forward(self, x):
         residual = x
-        x = self.ln(x)
-        x = self.mlp(x)
+        x = self.ln_pre(x)
         
-        # Memory bank features (high-resolution)
-        med = x 
+        # Bottleneck projection
+        med = self.down(x)
+        med = self.ln_mid(med)
+        med = self.act(med)
+        med = self.dropout(med)
         
-        # Gated residual connection
-        out = residual + self.gate * x
+        # Reconstruction
+        out = self.up(med)
+        out = residual + self.scale * out
+        
         return med, out
 
 
@@ -49,17 +39,17 @@ class CLIP_Inplanted(nn.Module):
         self,
         clip_model,
         features,
-        bottleneck=256,
-        dropout=0.1,
+        bottleneck=192,
+        dropout=0.15,
     ):
         super().__init__()
         self.clipmodel = clip_model
         self.features = sorted(list(features))
         
-        num_adapted_layers = len(self.features)
+        # ViT trunk
         self.image_encoder = clip_model.visual.trunk
 
-        # Visual projection
+        # Final projection (768 -> 512)
         if hasattr(clip_model.visual, "head") and hasattr(clip_model.visual.head, "proj"):
             self.visual_proj = clip_model.visual.head.proj
         else:
@@ -69,30 +59,19 @@ class CLIP_Inplanted(nn.Module):
         if hidden_dim is None:
             hidden_dim = self.image_encoder.embed_dim
 
-        # Build adapters with increased capacity
-        self.seg_adapters = nn.ModuleList([
-            ClipAdapter(hidden_dim, bottleneck=bottleneck, dropout=dropout)
-            for _ in self.features
-        ])
-        self.det_adapters = nn.ModuleList([
-            ClipAdapter(hidden_dim, bottleneck=bottleneck, dropout=dropout)
-            for _ in self.features
-        ])
-
-        # Learnable blending with better initialization
-        # Use smaller initial values to allow gradual learning
-        self.alpha_backbone = nn.Parameter(torch.ones(num_adapted_layers) * 0.85)
-        self.alpha_seg = nn.Parameter(torch.ones(num_adapted_layers) * 0.075)
-        self.alpha_det = nn.Parameter(torch.ones(num_adapted_layers) * 0.075)
+        # Build adapters
+        self.seg_adapters = nn.ModuleList(
+            [ClipAdapter(hidden_dim, bottleneck=bottleneck, dropout=dropout)
+             for _ in self.features]
+        )
+        self.det_adapters = nn.ModuleList(
+            [ClipAdapter(hidden_dim, bottleneck=bottleneck, dropout=dropout)
+             for _ in self.features]
+        )
 
         # Freeze backbone
         for p in self.image_encoder.parameters():
             p.requires_grad = False
-        
-        # Make visual projection trainable for better alignment
-        if self.visual_proj is not None:
-            for p in self.visual_proj.parameters():
-                p.requires_grad = True
 
     def forward(self, x):
         B = x.shape[0]
@@ -114,27 +93,23 @@ class CLIP_Inplanted(nn.Module):
             if layer_idx in self.features:
                 pos = self.features.index(layer_idx)
 
-                # Get adapter outputs
+                # Get adapter features
                 seg_med, seg_out = self.seg_adapters[pos](x)
                 det_med, det_out = self.det_adapters[pos](x)
 
-                # Normalize alphas with softmax for stable training
-                alphas = torch.softmax(torch.stack([
-                    self.alpha_backbone[pos],
-                    self.alpha_seg[pos],
-                    self.alpha_det[pos]
-                ]), dim=0)
+                # Simple blending (no learnable alphas)
+                x = 0.8 * x + 0.1 * seg_out + 0.1 * det_out
 
-                # Blended features
-                x = alphas[0] * x + alphas[1] * seg_out + alphas[2] * det_out
-
+                # Store UNPROJECTED tokens (projection happens in train/test)
                 seg_patch_tokens.append(seg_med)
                 det_patch_tokens.append(det_med)
 
         x = self.image_encoder.norm(x)
-        pooled = x[:, 0]
+        pooled = x[:, 0]  # CLS token
 
+        # Only project the pooled CLS token
         if self.visual_proj is not None:
             pooled = self.visual_proj(pooled)
 
+        # DO NOT project patch tokens here - let train/test handle it
         return pooled, seg_patch_tokens, det_patch_tokens
