@@ -13,14 +13,14 @@ class ClipAdapter(nn.Module):
             nn.Dropout(dropout),  # ADD THIS
             
             nn.Linear(bottleneck, bottleneck, bias=False),  # ADD EXTRA LAYER
-            #nn.LayerNorm(bottleneck),  # ADD THIS
+            nn.LayerNorm(bottleneck),  # ADD THIS
             nn.GELU(),
-            #nn.Dropout(dropout),
+            nn.Dropout(dropout),
 
             nn.Linear(bottleneck, c_in, bias=False),
             #nn.Dropout(dropout),
         )
-        self.gate = nn.Parameter(torch.tensor(0.05))  # ADD THIS
+        self.gate = nn.Parameter(torch.tensor(0.1))  # ADD THIS
         
     def forward(self, x):
         residual = x

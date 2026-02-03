@@ -113,25 +113,25 @@ def main():
         list(model.seg_adapters.parameters()), 
         lr=args.learning_rate, 
         betas=(0.9, 0.999),
-        weight_decay=1e-4  # Slightly lower than 1e-5
+        weight_decay=1e-6  # Slightly lower than 1e-5
     )
     det_optimizer = torch.optim.Adam(
         list(model.det_adapters.parameters()), 
         lr=args.learning_rate, 
         betas=(0.9, 0.999),
-        weight_decay=1e-4
+        weight_decay=1e-6
     )
     
     # Modified schedulers:
     seg_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         seg_optimizer, 
         T_max=20,        # Match expected convergence time
-        eta_min=2e-06    # 10% of starting LR, not 100× smaller
+        eta_min=2e-07   # 10% of starting LR, not 100× smaller
     )
     det_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         det_optimizer, 
         T_max=20, 
-        eta_min=2e-06
+        eta_min=5e-07
     )
     # load test dataset
     kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
