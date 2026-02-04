@@ -152,7 +152,7 @@ def main():
     cosine_seg = CosineAnnealingLR(
         seg_optimizer,
         T_max=total_epochs - warmup_epochs,
-        eta_min=args.learning_rate * 0.001
+        eta_min=args.learning_rate * 0.05
     )
     seg_scheduler = SequentialLR(
         seg_optimizer,
@@ -164,7 +164,7 @@ def main():
     cosine_det = CosineAnnealingLR(
         det_optimizer,
         T_max=total_epochs - warmup_epochs,
-        eta_min=args.learning_rate * 0.001
+        eta_min=args.learning_rate * 0.05
     )
     det_scheduler = SequentialLR(
         det_optimizer,
@@ -210,8 +210,8 @@ def main():
     # Add this to your training script BEFORE the epoch loop
     best_result = 0
     patience_counter = 0
-    patience_limit = 5  # Stop after 5 epochs without improvement
-    min_delta = 0.001   # Minimum improvement threshold
+    patience_limit = 15  # Stop after 5 epochs without improvement
+    min_delta = 0.0003   # Minimum improvement threshold
 
     for epoch in range(args.epoch):
         print('epoch ', epoch, ':')
