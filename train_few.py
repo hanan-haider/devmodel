@@ -83,6 +83,10 @@ def main():
     parser.add_argument('--shot', type=int, default=4)
     parser.add_argument('--iterate', type=int, default=0)
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='Weight decay for optimizer regularization')
+    parse.add_argument('--warmup_epochs', type=int, default=5, help='Number of warmup epochs for the learning rate scheduler')
+    parser.add_argument('--patience', type=int, default=10, help='Patience for early stopping')
+    parser.add_argument('--scaling_factor', type=float, default=0.1, help='Scaling factor for minimum learning rate in scheduler')
+
 
 
     #args = parser.parse_args()
@@ -145,14 +149,14 @@ def main():
     print(f"Total trainable:                 {seg_adapter_params + det_adapter_params + alpha_params:,}")
 
     # Enhanced scheduler
-    warmup_epochs = 8
+    warmup_epochs = agrs.warmup_epochs
     total_epochs = args.epoch
 
     warmup_seg = LinearLR(seg_optimizer, start_factor=0.01, total_iters=warmup_epochs)
     cosine_seg = CosineAnnealingLR(
         seg_optimizer,
         T_max=total_epochs - warmup_epochs,
-        eta_min=args.learning_rate * 0.1
+        eta_min=args.learning_rate * args.scaling_factor
     )
     seg_scheduler = SequentialLR(
         seg_optimizer,
@@ -164,7 +168,7 @@ def main():
     cosine_det = CosineAnnealingLR(
         det_optimizer,
         T_max=total_epochs - warmup_epochs,
-        eta_min=args.learning_rate * 0.1
+        eta_min=args.learning_rate * args.scaling_factor
     )
     det_scheduler = SequentialLR(
         det_optimizer,
@@ -210,7 +214,7 @@ def main():
     # Add this to your training script BEFORE the epoch loop
     best_result = 0
     patience_counter = 0
-    patience_limit = 15  # Stop after 5 epochs without improvement
+    patience_limit = args.patience # Stop after 5 epochs without improvement
     min_delta = 0.0001   # Minimum improvement threshold
 
     for epoch in range(args.epoch):
