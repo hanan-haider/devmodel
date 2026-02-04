@@ -149,7 +149,7 @@ def main():
     print(f"Total trainable:                 {seg_adapter_params + det_adapter_params + alpha_params:,}")
 
     # Enhanced scheduler
-    warmup_epochs = agrs.warmup_epochs
+    warmup_epochs = args.warmup_epochs
     total_epochs = args.epoch
 
     warmup_seg = LinearLR(seg_optimizer, start_factor=0.01, total_iters=warmup_epochs)
