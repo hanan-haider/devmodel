@@ -83,7 +83,7 @@ def main():
     parser.add_argument('--shot', type=int, default=4)
     parser.add_argument('--iterate', type=int, default=0)
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='Weight decay for optimizer regularization')
-    parse.add_argument('--warmup_epochs', type=int, default=5, help='Number of warmup epochs for the learning rate scheduler')
+    parser.add_argument('--warmup_epochs', type=int, default=5, help='Number of warmup epochs for the learning rate scheduler')
     parser.add_argument('--patience', type=int, default=10, help='Patience for early stopping')
     parser.add_argument('--scaling_factor', type=float, default=0.1, help='Scaling factor for minimum learning rate in scheduler')
 
