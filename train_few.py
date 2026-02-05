@@ -86,6 +86,7 @@ def main():
     parser.add_argument('--warmup_epochs', type=int, default=5, help='Number of warmup epochs for the learning rate scheduler')
     parser.add_argument('--patience', type=int, default=10, help='Patience for early stopping')
     parser.add_argument('--scaling_factor', type=float, default=0.1, help='Scaling factor for minimum learning rate in scheduler')
+    parser.add_argument('--min_delta', type=float, default=0.001, help='Minimum change to qualify as an improvement for early stopping')
 
 
 
@@ -215,7 +216,7 @@ def main():
     best_result = 0
     patience_counter = 0
     patience_limit = args.patience # Stop after 5 epochs without improvement
-    min_delta = 0.0001   # Minimum improvement threshold
+    min_delta = args.min_delta   # Minimum improvement threshold
 
     for epoch in range(args.epoch):
         print('epoch ', epoch, ':')
