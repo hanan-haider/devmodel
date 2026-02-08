@@ -212,7 +212,6 @@ def main():
         text_features = encode_text_with_biomedclip_prompt_ensemble1(clip_model, REAL_NAME[args.obj], device)
 
 
-    scaler = torch.cuda.amp.GradScaler()
 
     best_result = 0
     # Add this to your training script BEFORE the epoch loop
@@ -270,10 +269,7 @@ def main():
                     loss.backward()
                     seg_optimizer.step()
                     det_optimizer.step()
-                    scaler.scale(loss).backward()
-                    scaler.step(seg_optimizer)
-                    scaler.step(det_optimizer)
-                    scaler.update()
+
 
                 else:
                     loss = det_loss
@@ -281,10 +277,7 @@ def main():
                     det_optimizer.zero_grad()
                     loss.backward()
                     det_optimizer.step()
-                    scaler.scale(loss).backward()
-                    scaler.step(seg_optimizer)
-                    scaler.step(det_optimizer)
-                    scaler.update()
+ 
 
                 loss_list.append(loss.item())
 
