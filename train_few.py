@@ -125,18 +125,18 @@ def main():
     model.alpha_seg.requires_grad = True
     model.alpha_det.requires_grad = True
 
-    # Optimizers with differential learning rates
     seg_params = [
         {'params': model.seg_adapters.parameters(), 'lr': args.learning_rate},
         {'params': [model.alpha_seg], 'lr': args.learning_rate * 0.5},
-        {'params': [model.alpha_backbone], 'lr': args.learning_rate * 0.5},
     ]
     det_params = [
         {'params': model.det_adapters.parameters(), 'lr': args.learning_rate},
         {'params': [model.alpha_det], 'lr': args.learning_rate * 0.5},
+    ]
+    shared_params = [
         {'params': [model.alpha_backbone], 'lr': args.learning_rate * 0.5},
     ]
-
+    shared_optimizer = AdamW(shared_params, weight_decay=args.weight_decay)
     seg_optimizer = AdamW(seg_params, betas=(0.9, 0.999), weight_decay=args.weight_decay)
     det_optimizer = AdamW(det_params, betas=(0.9, 0.999), weight_decay=args.weight_decay)
 
@@ -211,6 +211,9 @@ def main():
     with torch.cuda.amp.autocast(), torch.no_grad():
         text_features = encode_text_with_biomedclip_prompt_ensemble1(clip_model, REAL_NAME[args.obj], device)
 
+
+    scaler = torch.cuda.amp.GradScaler()
+
     best_result = 0
     # Add this to your training script BEFORE the epoch loop
     best_result = 0
@@ -261,19 +264,27 @@ def main():
                         seg_loss += loss_dice(anomaly_map[:, 1, :, :], mask)
                     
                     loss = seg_loss + det_loss
-                    loss.requires_grad_(True)
+                    #loss.requires_grad_(True)
                     seg_optimizer.zero_grad()
                     det_optimizer.zero_grad()
                     loss.backward()
                     seg_optimizer.step()
                     det_optimizer.step()
+                    scaler.scale(loss).backward()
+                    scaler.step(seg_optimizer)
+                    scaler.step(det_optimizer)
+                    scaler.update()
 
                 else:
                     loss = det_loss
-                    loss.requires_grad_(True)
+                    #loss.requires_grad_(True)
                     det_optimizer.zero_grad()
                     loss.backward()
                     det_optimizer.step()
+                    scaler.scale(loss).backward()
+                    scaler.step(seg_optimizer)
+                    scaler.step(det_optimizer)
+                    scaler.update()
 
                 loss_list.append(loss.item())
 
