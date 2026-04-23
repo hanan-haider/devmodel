@@ -10,7 +10,7 @@ class ClipAdapter(nn.Module):
             nn.Linear(c_in, bottleneck, bias=False),
             nn.LayerNorm(bottleneck),  # ADD THIS
             nn.GELU(),  # CHANGE FROM LeakyReLU
-            nn.Dropout(dropout),  # ADD THIS
+            #nn.Dropout(dropout),  # ADD THIS
             
             nn.Linear(bottleneck, bottleneck, bias=False),  # ADD EXTRA LAYER
             nn.LayerNorm(bottleneck),  # ADD THIS
