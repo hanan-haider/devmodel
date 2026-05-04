@@ -148,6 +148,7 @@ def encode_text_with_biomedclip_prompt_ensemble(model, obj, device):
                 prompted_sentences.append(template.format(phrase))
 
         # FIXED INDENTATION — this part must be OUTSIDE inner loops
+        print("here is the prompted sentence",prompted_sentences)
         prompted_sentence = tokenize(prompted_sentences).to(device)
         class_embeddings = model.encode_text(prompted_sentence)
         """print("class_embeddings (raw):", class_embeddings)
